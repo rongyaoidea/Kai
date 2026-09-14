@@ -66,12 +66,6 @@ jobs:
       - name: Run updateScreenshots
         run: ./gradlew :screenshotTests:updateScreenshots --no-daemon --stacktrace
 
-      - name: Install cwebp
-        run: sudo apt-get update && sudo apt-get install -y webp
-
-      - name: Convert site images to WebP
-        run: ./scripts/convert-site-images-to-webp.sh
-
       - name: Run desktop tests
         run: ./gradlew :composeApp:desktopTest --no-daemon --stacktrace
 
@@ -90,11 +84,10 @@ jobs:
       - name: Fail on formatting or screenshot drift
         if: steps.changes.outputs.has_changes == 'true'
         run: |
-          echo "::error::spotlessApply, updateScreenshots, or the WebP conversion produced changes."
+          echo "::error::spotlessApply or updateScreenshots produced changes."
           echo "Run locally and push the result:"
           echo "  ./gradlew spotlessApply"
           echo "  ./gradlew :screenshotTests:updateScreenshots"
-          echo "  ./scripts/convert-site-images-to-webp.sh"
           git status --porcelain
           git diff --binary > drift.patch
           exit 1
