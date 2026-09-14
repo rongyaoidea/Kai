@@ -121,4 +121,32 @@ class WebSearchParsingTest {
     fun `marginalia parse ignores pages without result anchors`() {
         assertTrue(WebSearchTool.parseMarginaliaResults("<html><body>nothing</body></html>").isEmpty())
     }
+
+    @Test
+    fun `time filter maps day week month to ddg df`() {
+        assertEquals("d", timeFilterParam("day"))
+        assertEquals("d", timeFilterParam("d"))
+        assertEquals("w", timeFilterParam("Week"))
+        assertEquals("m", timeFilterParam("month"))
+        assertEquals(null, timeFilterParam("any"))
+        assertEquals(null, timeFilterParam(null))
+        assertEquals(null, timeFilterParam("year"))
+    }
+
+    @Test
+    fun `count clamps to 1-10 defaulting to 5`() {
+        assertEquals(5, clampCount(null))
+        assertEquals(5, clampCount(5))
+        assertEquals(1, clampCount(0))
+        assertEquals(1, clampCount(-3))
+        assertEquals(10, clampCount(99))
+    }
+
+    @Test
+    fun `count threads through parsers`() {
+        assertEquals(1, WebSearchTool.parseDdgHtmlResults(htmlFixture, maxResults = 1).size)
+        assertEquals(2, WebSearchTool.parseDdgHtmlResults(htmlFixture, maxResults = 10).size)
+        assertEquals(1, WebSearchTool.parseBingResults(bingFixture, maxResults = 1).size)
+        assertEquals(1, WebSearchTool.parseMarginaliaResults(marginaliaFixture, maxResults = 1).size)
+    }
 }

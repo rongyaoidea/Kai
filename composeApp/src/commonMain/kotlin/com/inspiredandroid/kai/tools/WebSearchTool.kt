@@ -8,17 +8,44 @@ import com.inspiredandroid.kai.network.tools.ToolSchema
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
 import io.ktor.client.request.header
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.isSuccess
 import kai.composeapp.generated.resources.Res
 import kai.composeapp.generated.resources.tool_web_search_description
 import kai.composeapp.generated.resources.tool_web_search_name
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 private const val MAX_RESULTS = 5
+
+/** Hard cap for the `count` argument — more than this is noise for the model. */
+private const val MAX_COUNT = 10
+
+/** Per-source budget. All sources race in parallel, so the worst case stays near this. */
+private const val SOURCE_TIMEOUT_MS = 12_000L
+
+/** Source ids used in `sources` / `source_status` telemetry. */
+private const val SRC_INSTANT = "ddg-instant"
+private const val SRC_DDG_HTML = "ddg-html"
+private const val SRC_DDG_LITE = "ddg-lite"
+private const val SRC_BING = "bing"
+private const val SRC_MARGINALIA = "marginalia"
+
+/** `time` argument → DuckDuckGo `df` param. Null means unfiltered. */
+internal fun timeFilterParam(time: String?): String? = when (time?.trim()?.lowercase()) {
+    "day", "d", "past-day", "past_day" -> "d"
+    "week", "w", "past-week", "past_week" -> "w"
+    "month", "m", "past-month", "past_month" -> "m"
+    else -> null
+}
+
+/** `count` argument → clamped result limit. */
+internal fun clampCount(count: Int?): Int = (count ?: MAX_RESULTS).coerceIn(1, MAX_COUNT)
 
 object WebSearchTool : Tool {
     private val liteLinkRegex = Regex("""<a[^>]+class=['"]result-link['"][^>]*>([\s\S]*?)</a>""")
@@ -47,9 +74,11 @@ object WebSearchTool : Tool {
 
     override val schema = ToolSchema(
         name = "web_search",
-        description = "Search the web for current information. Returns a direct answer when one is available, plus titles, URLs, and snippets. Before answering questions about recent events, news, current prices, weather, or anything time-sensitive, search first. Also use this when you're unsure about facts or the user asks you to look something up.",
+        description = "Search the web for current information. Returns a direct answer when one is available, plus titles, URLs, and snippets. Before answering questions about recent events, news, current prices, weather, or anything time-sensitive, search first. Also use this when you're unsure about facts or the user asks you to look something up. Pass count (1-10) to control result volume and time (day/week/month) to restrict recency — time applies to the DuckDuckGo sources; use it for news and other time-sensitive queries.",
         parameters = mapOf(
             "query" to ParameterSchema("string", "The search query", true),
+            "count" to ParameterSchema("integer", "Max results to return, 1-10 (default 5)", false),
+            "time" to ParameterSchema("string", "Recency filter: any, day, week, month (default any). Applies to DuckDuckGo results.", false),
         ),
     )
 
@@ -62,55 +91,100 @@ object WebSearchTool : Tool {
     override suspend fun execute(args: Map<String, Any>): Any {
         val query = args["query"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
             ?: return mapOf("success" to false, "error" to "Query is required")
+        val count = clampCount((args["count"] as? Number)?.toInt() ?: args["count"]?.toString()?.toIntOrNull())
+        val time = (args["time"] as? String)?.trim()?.takeIf { it.isNotEmpty() }
 
         return try {
-            searchDuckDuckGo(query)
+            searchChain(query, count, time)
         } catch (e: Exception) {
             mapOf("success" to false, "error" to "Search failed: ${e.message}")
         }
     }
 
-    /**
-     * No-API-key chain: DuckDuckGo (instant answer + html, lite fallback),
-     * then Bing HTML, then Marginalia. First source with results wins; a DDG
-     * instant answer alone also stops the chain.
-     */
-    private suspend fun searchDuckDuckGo(query: String): Any {
-        val encoded = query.encodeURLQueryComponent()
-        val (answer, htmlResults) = coroutineScope {
-            val answerDeferred = async { runCatching { fetchInstantAnswer(encoded) }.getOrNull() }
-            val htmlDeferred = async { runCatching { searchDdgHtml(encoded) }.getOrDefault(emptyList()) }
-            answerDeferred.await() to htmlDeferred.await()
-        }
-        val results = if (htmlResults.isNotEmpty()) {
-            htmlResults
-        } else {
-            runCatching { searchDdgLite(encoded) }.getOrDefault(emptyList())
-        }
-
-        if (results.isNotEmpty() || answer != null) {
-            return buildMap<String, Any> {
-                if (answer != null) put("answer", answer)
-                put("results", results)
-            }.let { mapOf("success" to true) + it }
-        }
-        val bing = runCatching { searchBingHtml(encoded) }.getOrDefault(emptyList())
-        if (bing.isNotEmpty()) {
-            return mapOf("success" to true, "results" to bing)
-        }
-        val marginalia = runCatching { searchMarginalia(encoded) }.getOrDefault(emptyList())
-        if (marginalia.isNotEmpty()) {
-            return mapOf("success" to true, "results" to marginalia)
-        }
-        return mapOf("success" to true, "results" to emptyList<Any>(), "message" to "No results found")
+    /** One source's outcome. [error] is null on clean runs (even empty ones) — it names the failure, not the absence. */
+    private data class SourceLoad(
+        val name: String,
+        val items: List<Map<String, String>>,
+        val error: String?,
+    ) {
+        val status: String get() = if (error != null) "failed: $error" else if (items.isEmpty()) "empty" else "ok (${items.size})"
     }
 
-    internal fun parseDdgHtmlResults(html: String): List<Map<String, String>> {
+    /**
+     * No-API-key chain, raced in parallel: DuckDuckGo (instant answer + html +
+     * lite), then Bing HTML, then Marginalia. The old code walked the chain
+     * sequentially (answer+html → lite → bing → marginalia), so a slow first
+     * source could eat the whole tool timeout before the fallbacks were even
+     * tried. Now every source gets the same 12s budget concurrently and the
+     * first non-empty source in priority order wins, so worst case stays flat.
+     */
+    private suspend fun searchChain(query: String, count: Int, time: String?): Map<String, Any> = coroutineScope {
+        val encoded = query.encodeURLQueryComponent()
+        val df = timeFilterParam(time)
+        val instant = async { loadAnswer(encoded) }
+        val html = async { loadList(SRC_DDG_HTML) { searchDdgHtml(encoded, df, count) } }
+        val lite = async { loadList(SRC_DDG_LITE) { searchDdgLite(encoded, df, count) } }
+        val bing = async { loadList(SRC_BING) { searchBingHtml(encoded, count) } }
+        val marginalia = async { loadList(SRC_MARGINALIA) { searchMarginalia(encoded, count) } }
+
+        val (answer, answerStatus) = instant.await()
+        val lists = listOf(html.await(), lite.await(), bing.await(), marginalia.await())
+        val winner = lists.firstOrNull { it.items.isNotEmpty() }
+        val results = winner?.items.orEmpty()
+
+        if (results.isNotEmpty() || answer != null) {
+            val sources = buildList {
+                if (answer != null) add(SRC_INSTANT)
+                if (winner != null) add(winner.name)
+            }
+            return@coroutineScope buildMap<String, Any> {
+                if (answer != null) put("answer", answer)
+                put("results", results)
+                put("sources", sources)
+            }.let { mapOf("success" to true) + it }
+        }
+        // Nothing anywhere: report per-source status instead of a bare "no
+        // results", so parser rot (a source suddenly returning empty/failed
+        // on every query) is distinguishable from a genuinely empty web.
+        val status = buildMap<String, String> {
+            put(SRC_INSTANT, answerStatus)
+            for (load in lists) put(load.name, load.status)
+        }
+        mapOf(
+            "success" to true,
+            "results" to emptyList<Any>(),
+            "message" to "No results found",
+            "source_status" to status,
+        )
+    }
+
+    private suspend fun loadAnswer(encodedQuery: String): Pair<Map<String, String>?, String> {
+        return try {
+            val answer = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { fetchInstantAnswer(encodedQuery) }
+            if (answer != null) answer to "ok" else null to "empty"
+        } catch (e: Exception) {
+            null to "failed: ${shortError(e)}"
+        }
+    }
+
+    private suspend fun loadList(name: String, block: suspend () -> List<Map<String, String>>): SourceLoad {
+        return try {
+            val items = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { block() }
+                ?: return SourceLoad(name, emptyList(), "timeout after ${SOURCE_TIMEOUT_MS / 1000}s")
+            SourceLoad(name, items, null)
+        } catch (e: Exception) {
+            SourceLoad(name, emptyList(), shortError(e))
+        }
+    }
+
+    private fun shortError(e: Exception): String = (e.message ?: e::class.simpleName ?: "error").take(120)
+
+    internal fun parseDdgHtmlResults(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
         val results = mutableListOf<Map<String, String>>()
         val links = htmlLinkRegex.findAll(html).toList()
         val snippets = htmlSnippetRegex.findAll(html).toList()
         for (i in links.indices) {
-            if (results.size >= MAX_RESULTS) break
+            if (results.size >= maxResults) break
             val tag = links[i].value
             val href = liteHrefRegex.find(tag)?.groupValues?.get(1) ?: continue
             val title = links[i].groupValues[1].stripHtml().trim()
@@ -123,11 +197,13 @@ object WebSearchTool : Tool {
         return results
     }
 
-    private suspend fun searchDdgHtml(encodedQuery: String): List<Map<String, String>> {
-        val html = client.get("https://html.duckduckgo.com/html/?q=$encodedQuery") {
-            header("User-Agent", "Mozilla/5.0 (compatible; Kai/1.0)")
-        }.bodyAsText()
-        return parseDdgHtmlResults(html)
+    private suspend fun searchDdgHtml(encodedQuery: String, df: String?, count: Int): List<Map<String, String>> {
+        val url = buildString {
+            append("https://html.duckduckgo.com/html/?q=$encodedQuery")
+            if (df != null) append("&df=$df")
+        }
+        val html = getText(url, "Mozilla/5.0 (compatible; Kai/1.0)")
+        return parseDdgHtmlResults(html, count)
     }
 
     internal fun parseInstantAnswer(body: String): Map<String, String>? {
@@ -156,15 +232,27 @@ object WebSearchTool : Tool {
     }
 
     private suspend fun fetchInstantAnswer(encodedQuery: String): Map<String, String>? {
-        val body = client.get(
+        val body = getText(
             "https://api.duckduckgo.com/?q=$encodedQuery&format=json&no_html=1&skip_disambig=1",
-        ) {
-            header("User-Agent", "Mozilla/5.0 (compatible; Kai/1.0)")
-        }.bodyAsText()
+            "Mozilla/5.0 (compatible; Kai/1.0)",
+        )
         return parseInstantAnswer(body)
     }
 
-    private fun parseResults(html: String): List<Map<String, String>> {
+    /**
+     * GET that treats non-2xx as a failure with the status code, so a block
+     * page / captcha / outage surfaces as `failed: http 403` in source_status
+     * instead of silently parsing to zero results ("empty").
+     */
+    private suspend fun getText(url: String, userAgent: String): String {
+        val response: HttpResponse = client.get(url) {
+            header("User-Agent", userAgent)
+        }
+        if (!response.status.isSuccess()) throw Exception("http ${response.status.value}")
+        return response.bodyAsText()
+    }
+
+    private fun parseResults(html: String, maxResults: Int): List<Map<String, String>> {
         val results = mutableListOf<Map<String, String>>()
 
         // DuckDuckGo Lite returns results in a table structure
@@ -175,7 +263,7 @@ object WebSearchTool : Tool {
         val snippets = liteSnippetRegex.findAll(html).toList()
 
         for (i in links.indices) {
-            if (results.size >= MAX_RESULTS) break
+            if (results.size >= maxResults) break
             val linkTag = linkTags.getOrNull(i)?.value ?: continue
             val href = liteHrefRegex.find(linkTag)?.groupValues?.get(1) ?: continue
             val title = links[i].groupValues[1].stripHtml().trim()
@@ -198,31 +286,29 @@ object WebSearchTool : Tool {
         return results
     }
 
-    private suspend fun searchDdgLite(encodedQuery: String): List<Map<String, String>> {
-        val html = client.get("https://lite.duckduckgo.com/lite/?q=$encodedQuery") {
-            header("User-Agent", "Mozilla/5.0 (compatible; Kai/1.0)")
-        }.bodyAsText()
-        return parseResults(html)
+    private suspend fun searchDdgLite(encodedQuery: String, df: String?, count: Int): List<Map<String, String>> {
+        val url = buildString {
+            append("https://lite.duckduckgo.com/lite/?q=$encodedQuery")
+            if (df != null) append("&df=$df")
+        }
+        val html = getText(url, "Mozilla/5.0 (compatible; Kai/1.0)")
+        return parseResults(html, count)
     }
 
-    private suspend fun searchBingHtml(encodedQuery: String): List<Map<String, String>> {
-        val html = client.get("https://www.bing.com/search?q=$encodedQuery") {
-            header("User-Agent", DESKTOP_UA)
-        }.bodyAsText()
-        return parseBingResults(html)
+    private suspend fun searchBingHtml(encodedQuery: String, count: Int): List<Map<String, String>> {
+        val html = getText("https://www.bing.com/search?q=$encodedQuery", DESKTOP_UA)
+        return parseBingResults(html, count)
     }
 
-    private suspend fun searchMarginalia(encodedQuery: String): List<Map<String, String>> {
-        val html = client.get("https://marginalia-search.com/search?query=$encodedQuery") {
-            header("User-Agent", DESKTOP_UA)
-        }.bodyAsText()
-        return parseMarginaliaResults(html)
+    private suspend fun searchMarginalia(encodedQuery: String, count: Int): List<Map<String, String>> {
+        val html = getText("https://marginalia-search.com/search?query=$encodedQuery", DESKTOP_UA)
+        return parseMarginaliaResults(html, count)
     }
 
-    internal fun parseBingResults(html: String): List<Map<String, String>> {
+    internal fun parseBingResults(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
         val results = mutableListOf<Map<String, String>>()
         for (segment in html.split("<li class=\"b_algo\"").drop(1)) {
-            if (results.size >= MAX_RESULTS) break
+            if (results.size >= maxResults) break
             val blockEnd = segment.indexOf("<li class=\"")
             val block = if (blockEnd >= 0) segment.substring(0, blockEnd) else segment
             val titleMatch = bingTitleRegex.find(block) ?: continue
@@ -266,10 +352,10 @@ object WebSearchTool : Tool {
         null
     }
 
-    internal fun parseMarginaliaResults(html: String): List<Map<String, String>> {
+    internal fun parseMarginaliaResults(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
         val results = mutableListOf<Map<String, String>>()
         for (match in margAnchorRegex.findAll(html)) {
-            if (results.size >= MAX_RESULTS) break
+            if (results.size >= maxResults) break
             if (!match.value.contains("dir=\"auto\"")) continue
             val url = match.groups[1]?.value?.trim().orEmpty()
             if (url.isEmpty()) continue

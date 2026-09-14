@@ -1,6 +1,6 @@
 # Tools
 
-**Last verified:** 2026-09-12
+**Last verified:** 2026-09-14
 
 Kai's tools feature allows the AI to execute external functions during conversations — web search, notifications, calendar events, shell commands, memory operations, and more. Tools are defined with a schema, executed with safety guards, and managed through per-tool toggles in settings.
 
@@ -30,7 +30,7 @@ The component that looks up a tool by name, parses JSON arguments into a typed m
 
 | Tool | Description | Default |
 |---|---|---|
-| `web_search` | Search the web (direct answer + titles/URLs/snippets) via the no-key chain below | Enabled |
+| `web_search` | Search the web (direct answer + titles/URLs/snippets) via the no-key chain below. Takes `count` (1-10, default 5) and `time` (any/day/week/month — recency applies to the DuckDuckGo sources). Results carry a `sources` list naming the contributing source; an empty result carries `source_status` with per-source ok/empty/failed telemetry instead of a bare "no results". | Enabled |
 | `get_local_time` | Get the current local date and time | Enabled |
 | `get_location_from_ip` | Get estimated location from IP address | Enabled |
 | `open_url` | Open a URL, link, or local file on the device | Enabled |
@@ -114,11 +114,11 @@ The tool's description is composed per distribution, so the model is told the ri
 
 **Chat-bar toggle:** A terminal icon next to the new-chat button in the chat top bar (Android only) toggles the chat body between the conversation view and the inline sandbox view — no navigation, no separate screen. The icon adopts a primary-tinted "selected" pill while the sandbox is open, and the message-input bar is hidden so the terminal/file browser have full vertical space. The other top-bar buttons (settings, history, +, TTS) stay visible and operational; tapping **+** or selecting a saved chat from the history sheet auto-collapses the sandbox view so the user lands on the chat they just chose. When the sandbox is ready the inline view hosts three sub-tabs — **Terminal** (interactive shell, default), **Files** (built-in file browser starting at `/root` — tap files to open in the user's default Android app via the same FileProvider/Intent path as `open_file`, or fall back to a built-in editable text editor with a Save action; the listing refreshes on its own each time the tab becomes visible, so files the assistant created or changed through the shell show up without any user action; an import action copies a file from device storage into the directory on screen, which is the only way to get a file into the sandbox without going through the agent), and **Packages** (search / install / uninstall / upgrade through whichever package manager is installed — see the sandbox doc for the search ranking rules). When the sandbox isn't installed yet, the inline view shows the install button so users don't have to dive into Settings before they can start.
 
-#### No-key search chain (evaluated 2026-09-11)
+#### No-key search chain (evaluated 2026-09-11, parallelized 2026-09-14)
 
-`web_search` walks a keyless fallback chain — first source with results wins, and a DuckDuckGo instant answer alone also stops the chain:
+`web_search` walks a keyless fallback chain — DuckDuckGo (instant answer + html + lite), Bing HTML, Marginalia — raced in parallel with a 12s budget per source; the first non-empty source in that priority order wins, so a slow source can no longer eat the tool timeout before the fallbacks are tried. Non-2xx responses count as failures (with the status code) rather than parsing to silent empties.
 
-1. **DuckDuckGo** — instant-answer API plus the html endpoint, lite endpoint as fallback. The long-standing default; kept first.
+1. **DuckDuckGo** — instant-answer API plus the html endpoint, lite endpoint as fallback. The long-standing default; kept first. The only sources honoring the `time` argument (`day`/`week`/`month` map to DDG's `df` filter).
 2. **Bing HTML** — `b_algo` result blocks. Title links usually hide behind a `/ck/a` redirect with the target base64url-encoded in `u=a1…`, which the parser decodes; snippets come from the `.b_caption` paragraph. Verified returning full result sets.
 3. **Marginalia** (marginalia-search.com) — independent index, strong on long-tail and non-commercial content, weak on fresh news. Tailwind markup has no semantic result classes, so titles are the `dir="auto"` anchors and snippets the following paragraph.
 
@@ -167,7 +167,7 @@ When `background=true`, the command starts asynchronously and returns a `session
 
 #### Persistent bash session (Android)
 
-On Android, each conversation gets its own persistent bash session inside the Linux sandbox. This is the default execution mode for `execute_shell_command`: `cd`, environment variable exports, shell functions, and other in-shell state carry across calls within the same conversation, so the AI can build up working context the same way a human terminal user does. Passing `fresh: true` opts out of the persistent session for a single call — that command runs in a one-shot proot invocation with no shared state, useful when the AI wants a clean environment without disturbing the ongoing session.
+On Android, each conversation gets its own persistent shell session. With the sandbox installed this is bash inside the Linux rootfs; without it, the same session model runs on the host mksh (`/system/bin/sh`) with the toybox applets — no download, but also no apt/apk, no python/node/git/curl/ssh, no bash-isms, and files written under app storage cannot be executed. Installing the sandbox later transparently promotes the same tool to the full tier. This is the default execution mode for `execute_shell_command`: `cd`, environment variable exports, shell functions, and other in-shell state carry across calls within the same conversation, so the AI can build up working context the same way a human terminal user does. Passing `fresh: true` opts out of the persistent session for a single call — that command runs in a one-shot invocation with no shared state, useful when the AI wants a clean environment without disturbing the ongoing session.
 
 The desktop tool dynamically includes the detected OS (macOS/Linux/Windows) and shell in its description so the AI knows the execution context.
 
@@ -262,7 +262,7 @@ See [mcp.md](mcp.md) for the full MCP feature spec.
 Tool availability is controlled at multiple levels:
 
 - **Feature-level gates** — memory tools require memory enabled, scheduling/heartbeat tools require scheduling enabled, email tools require email enabled
-- **Sandbox install gate (Android)** — `execute_shell_command`, `manage_process`, `ssh_configure_host`, `read_file`, and `write_file` are surfaced only when the Linux sandbox is actually installed (Ready) *and* the sandbox toggle is on. Until the sandbox is installed these tools are not sent to the model at all; the sandbox toggle itself is hidden until install completes, so there is no state in which they ride along without a working sandbox behind them
+- **Sandbox install gate (Android)** — `ssh_configure_host`, `read_file`, and `write_file` are surfaced only when the Linux sandbox is actually installed (Ready) *and* the sandbox toggle is on. `execute_shell_command` and `manage_process` are tiered instead of gated: full proot Linux when Ready, host mksh/toybox (no rootfs, no download) otherwise — same tool surface and session model, narrower capabilities. Skills still require Ready (`~/skills/` lives in the sandbox).
 - **Per-tool toggles** — individual tools can be enabled or disabled in settings, persisted with a `tool_enabled_` key prefix
 - **Default state** — most tools default to enabled; `execute_shell_command` defaults to disabled
 - **Master-toggle-only** — memory, scheduling, heartbeat, email, SMS, and notification tools have no individual per-tool toggle; they are on whenever their master switch in Settings → Agent is on (heartbeat is bundled with the scheduling switch). The Android sandbox tools and desktop's `manage_process` are gated the same way — by the sandbox switch and the shell switch respectively — and likewise carry no switch of their own
