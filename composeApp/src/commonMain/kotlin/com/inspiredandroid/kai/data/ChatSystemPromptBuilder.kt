@@ -97,12 +97,6 @@ internal const val DEFAULT_HONESTY_RULE =
     "Do not fabricate tool outputs, file contents, citations, or completed work."
 
 /**
- * Universal tool-use policy composed into every chat variant. Lives as its own constant
- * (not in the soul string) so it survives user customization of the soul — the same
- * reasoning as [DEFAULT_HONESTY_RULE]. Has a `##` header because it's three sentences
- * of addressable policy, not a single inline rule.
- */
-/**
  * Tells the model how to read the delimiters every tool result is wrapped in. Prompt
  * injection is the failure this addresses: the agent reads third-party text (fetched
  * pages, mail bodies, MCP replies) and must not mistake instructions inside it for the
