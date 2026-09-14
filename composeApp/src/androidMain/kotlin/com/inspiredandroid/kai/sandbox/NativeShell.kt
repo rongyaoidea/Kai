@@ -104,7 +104,7 @@ class NativeShellSession(home: File) {
         // it would be refused on app storage), capture the exit, emit the
         // sentinel to stderr so stdout redirects can't swallow it.
         val line = ". ${sq(cmdFile.absolutePath)}; __kai_st=$?; rm -f ${sq(cmdFile.absolutePath)}; " +
-            "printf '%s\\n' \"$SENTINEL_PREFIX $nonce $__kai_st $PWD\" >&2"
+            "printf '%s\\n' \"$SENTINEL_PREFIX $nonce \$__kai_st \$PWD\" >&2"
         try {
             val w = writer ?: throw IllegalStateException("shell has no stdin")
             w.write(line)
