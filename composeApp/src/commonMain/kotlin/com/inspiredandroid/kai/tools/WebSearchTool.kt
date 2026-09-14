@@ -107,7 +107,13 @@ object WebSearchTool : Tool {
         val items: List<Map<String, String>>,
         val error: String?,
     ) {
-        val status: String get() = if (error != null) "failed: $error" else if (items.isEmpty()) "empty" else "ok (${items.size})"
+        val status: String get() = if (error != null) {
+            "failed: $error"
+        } else if (items.isEmpty()) {
+            "empty"
+        } else {
+            "ok (${items.size})"
+        }
     }
 
     /**
@@ -158,13 +164,11 @@ object WebSearchTool : Tool {
         )
     }
 
-    private suspend fun loadAnswer(encodedQuery: String): Pair<Map<String, String>?, String> {
-        return try {
-            val answer = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { fetchInstantAnswer(encodedQuery) }
-            if (answer != null) answer to "ok" else null to "empty"
-        } catch (e: Exception) {
-            null to "failed: ${shortError(e)}"
-        }
+    private suspend fun loadAnswer(encodedQuery: String): Pair<Map<String, String>?, String> = try {
+        val answer = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { fetchInstantAnswer(encodedQuery) }
+        if (answer != null) answer to "ok" else null to "empty"
+    } catch (e: Exception) {
+        null to "failed: ${shortError(e)}"
     }
 
     private suspend fun loadList(name: String, block: suspend () -> List<Map<String, String>>): SourceLoad {

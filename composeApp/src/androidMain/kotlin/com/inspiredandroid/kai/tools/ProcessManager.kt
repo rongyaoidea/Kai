@@ -199,6 +199,7 @@ class ProcessManager(private val sandboxManager: LinuxSandboxManager) {
                 val home = sandboxManager.nativeHome
                 val dir = when {
                     workingDir.isBlank() -> home
+
                     else -> {
                         val candidate = File(workingDir).let { f -> if (f.isAbsolute) f else File(home, workingDir) }
                         if (candidate.isDirectory) candidate else home
