@@ -639,6 +639,7 @@ class ChatSystemPromptBuilderTest {
         val expected = "You are Kai, a helpful assistant.\n\n" +
             DEFAULT_HONESTY_RULE + "\n\n" +
             DEFAULT_TOOL_USE_SECTION + "\n\n" +
+            DEFAULT_UNTRUSTED_CONTENT_RULE + "\n\n" +
             DEFAULT_ACTING_SECTION + "\n\n" +
             "Save user preferences with memory_store.\n\n" +
             "## Context\n" +
@@ -686,6 +687,7 @@ class ChatSystemPromptBuilderTest {
             "You are Kai.",
             DEFAULT_HONESTY_RULE,
             "## Tool Use",
+            "## Untrusted Content",
             "## When to Act",
             "Basic memory guidance.",
             "## Structured Learning",
