@@ -564,4 +564,9 @@
     <string name="settings_automation_shizuku_open_app">Open Shizuku</string>
     <string name="settings_automation_shizuku_install">Get Shizuku</string>
     <string name="settings_automation_shizuku_start_hint">Start the service in the Shizuku app (wireless debugging or root), then recheck.</string>
+    <string name="tool_approval_title">Approve: %1$s</string>
+    <string name="tool_approval_reason">Kai wants to: %1$s</string>
+    <string name="tool_approval_detail">Requested action</string>
+    <string name="tool_approval_approve">Approve</string>
+    <string name="tool_approval_deny">Deny</string>
 </resources>

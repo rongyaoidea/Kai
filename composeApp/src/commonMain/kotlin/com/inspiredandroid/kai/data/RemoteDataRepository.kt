@@ -60,6 +60,8 @@ import com.inspiredandroid.kai.sms.SmsSendResult
 import com.inspiredandroid.kai.sms.SmsSender
 import com.inspiredandroid.kai.tools.NotificationListenerController
 import com.inspiredandroid.kai.tools.PermissionController
+import com.inspiredandroid.kai.tools.ToolInteractionElement
+import com.inspiredandroid.kai.tools.isInteractiveRun
 import com.inspiredandroid.kai.ui.chat.History
 import com.inspiredandroid.kai.ui.chat.ToolCallInfo
 import com.inspiredandroid.kai.ui.chat.toGeminiMessageDto
@@ -709,7 +711,7 @@ class RemoteDataRepository(
         val conversationIdForTool = activeConversationId()
         try {
             val result = try {
-                toolExecutor.executeTool(name, arguments, conversationIdForTool)
+                toolExecutor.executeTool(name, arguments, conversationIdForTool, interactive = isInteractiveRun())
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 """{"success": false, "error": "${e.message ?: "Tool execution failed"}"}"""
@@ -958,7 +960,12 @@ class RemoteDataRepository(
         val runStartIndex = runHistory.value.size
         var runFailure: Exception? = null
         try {
-            withContext(ConversationIdElement(conversationId) + ChatRunHistoryElement(runHistory)) {
+            // A chat run is interactive: risky tools may ask the user for approval through
+            // the dialog the app root shows. Scheduled/heartbeat runs deliberately do not
+            // carry this element (see `askWithTools`).
+            withContext(
+                ConversationIdElement(conversationId) + ChatRunHistoryElement(runHistory) + ToolInteractionElement(interactive = true),
+            ) {
                 askInternal(question, files, uiSubmission, conversationId)
             }
         } catch (e: Exception) {
@@ -1463,12 +1470,15 @@ class RemoteDataRepository(
         // Snapshot the conversation id once so all parallel tool calls in this batch
         // see a stable value even if the user switches conversations mid-flight.
         val conversationIdSnapshot = activeConversationId()
+        // Risky tools may only ask for approval inside a chat run; the run's coroutine
+        // context is the only place that knows whether a user is watching.
+        val interactive = isInteractiveRun()
         val startTime = Clock.System.now().toEpochMilliseconds()
         try {
             val results = coroutineScope {
                 toolCalls.map { (callId, name, arguments) ->
                     async {
-                        val result = toolExecutor.executeTool(name, arguments, conversationIdSnapshot)
+                        val result = toolExecutor.executeTool(name, arguments, conversationIdSnapshot, interactive = interactive)
                         Triple(callId, name, result)
                     }
                 }.awaitAll()
@@ -2372,12 +2382,18 @@ class RemoteDataRepository(
         // Background runs can write ~/skills too, so rescan afterwards exactly
         // like the foreground ask() path does.
         val response = try {
+            // Background runs are never interactive: nobody is looking at the chat, so a
+            // risky tool call has to fail in ToolExecutor instead of waiting for an
+            // approval no one can give.
+            val runContext = ToolInteractionElement(interactive = false)
             if (conversationIdOverride != null) {
-                withContext(ConversationIdElement(conversationIdOverride)) {
+                withContext(runContext + ConversationIdElement(conversationIdOverride)) {
                     askWithService(service, messages, systemPrompt, targetInstance.instanceId, localHistory).content
                 }
             } else {
-                askWithService(service, messages, systemPrompt, targetInstance.instanceId, localHistory).content
+                withContext(runContext) {
+                    askWithService(service, messages, systemPrompt, targetInstance.instanceId, localHistory).content
+                }
             }
         } finally {
             skillManager.load()

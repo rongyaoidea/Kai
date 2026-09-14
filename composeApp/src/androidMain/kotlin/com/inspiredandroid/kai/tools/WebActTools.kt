@@ -66,6 +66,11 @@ object WebActTools {
                         if (!url.startsWith("http://") && !url.startsWith("https://")) {
                             return mapOf("success" to false, "error" to "only http and https URLs are allowed")
                         }
+                        // Same host policy as fetch_url, so browsing cannot reach the
+                        // private network that tool refuses.
+                        blockedUrlHostReason(url)?.let { blocked ->
+                            return mapOf("success" to false, "error" to blocked)
+                        }
                         val timeoutMs = ((args["timeout"] as? Number)?.toLong() ?: 30L)
                             .coerceIn(10, 60) * 1000
                         val landed = sessions.goto(sessionId, url, timeoutMs)

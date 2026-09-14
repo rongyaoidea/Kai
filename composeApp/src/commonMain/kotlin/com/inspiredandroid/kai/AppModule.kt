@@ -31,6 +31,7 @@ import com.inspiredandroid.kai.splinterlands.SplinterlandsStore
 import com.inspiredandroid.kai.tools.AppPermission
 import com.inspiredandroid.kai.tools.NotificationListenerController
 import com.inspiredandroid.kai.tools.PermissionController
+import com.inspiredandroid.kai.tools.ToolApprovalGate
 import com.inspiredandroid.kai.ui.build.KaiBuildViewModel
 import com.inspiredandroid.kai.ui.chat.ChatViewModel
 import com.inspiredandroid.kai.ui.sandbox.SandboxFileBrowserViewModel
@@ -69,8 +70,11 @@ val appModule = module {
     single<ConversationStorage> {
         ConversationStorage(get(), createConversationPersistence(get()))
     }
+    // Decides whether a risky tool call (shell, mail, installs) may run; the approval
+    // dialog in the app root renders `pending` and answers through approve/deny.
+    single { ToolApprovalGate() }
     single<ToolExecutor> {
-        ToolExecutor()
+        ToolExecutor(approvalGate = get())
     }
     single<MemoryStore> {
         MemoryStore(get())

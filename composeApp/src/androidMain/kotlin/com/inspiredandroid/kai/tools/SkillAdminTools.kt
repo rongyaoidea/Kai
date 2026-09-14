@@ -33,8 +33,10 @@ object SkillAdminTools {
         if (!sandboxReady()) return emptyList()
         return buildList {
             if (appSettings.isToolEnabled("list_skills")) add(listSkillsTool)
-            if (appSettings.isToolEnabled("install_skill")) add(installSkillTool)
-            if (appSettings.isToolEnabled("uninstall_skill")) add(uninstallSkillTool)
+            // A skill is instruction text the agent then follows, fetched from a host the
+            // model picks — opt-in, not on by default.
+            if (appSettings.isToolEnabled("install_skill", defaultEnabled = false)) add(installSkillTool)
+            if (appSettings.isToolEnabled("uninstall_skill", defaultEnabled = false)) add(uninstallSkillTool)
         }
     }
 
@@ -143,13 +145,13 @@ object SkillAdminTools {
             id = "install_skill",
             name = "Install Skill",
             description = "Install a skill from GitHub, a direct URL, or pasted text",
-            isEnabled = true,
+            isEnabled = false,
         ),
         ToolInfo(
             id = "uninstall_skill",
             name = "Uninstall Skill",
             description = "Remove an installed skill",
-            isEnabled = true,
+            isEnabled = false,
         ),
     )
 }

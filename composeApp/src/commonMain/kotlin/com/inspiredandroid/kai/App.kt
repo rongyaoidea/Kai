@@ -39,12 +39,14 @@ import com.inspiredandroid.kai.data.ThemeMode
 import com.inspiredandroid.kai.tools.AppPermission
 import com.inspiredandroid.kai.tools.PermissionController
 import com.inspiredandroid.kai.tools.SetupPermissionHandler
+import com.inspiredandroid.kai.tools.ToolApprovalGate
 import com.inspiredandroid.kai.ui.DarkColorScheme
 import com.inspiredandroid.kai.ui.LightColorScheme
 import com.inspiredandroid.kai.ui.Theme
 import com.inspiredandroid.kai.ui.chat.ChatScreen
 import com.inspiredandroid.kai.ui.chat.ChatViewModel
 import com.inspiredandroid.kai.ui.components.FullScreenImageHost
+import com.inspiredandroid.kai.ui.components.ToolApprovalDialog
 import com.inspiredandroid.kai.ui.handCursor
 import com.inspiredandroid.kai.ui.rememberSandboxAwareUriHandler
 import com.inspiredandroid.kai.ui.settings.SettingsScreen
@@ -163,6 +165,11 @@ private fun AppContent(
         LocalUriHandler provides sandboxAwareUriHandler,
     ) {
         Theme(colorScheme = effectiveColorScheme) {
+            // Risky tool calls (shell, mail, installs) suspend until the user answers here,
+            // so the dialog lives at the root and stays visible during any screen.
+            val toolApprovalGate = koinInject<ToolApprovalGate>()
+            ToolApprovalDialog(toolApprovalGate)
+
             FullScreenImageHost {
                 val chatViewModel: ChatViewModel = koinViewModel()
                 val showTabBar = currentPlatform !is Platform.Mobile

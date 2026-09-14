@@ -216,3 +216,18 @@ object FetchUrlTool : Tool {
         descriptionRes = Res.string.tool_fetch_url_description,
     )
 }
+
+/**
+ * The host policy [FetchUrlTool] applies, exposed so every tool that accepts a URL from the
+ * model — `browse_page`, `web_act` — refuses private and loopback addresses as well. Sharing
+ * the check is the point: an SSRF guard is only as strong as the one tool that remembers to
+ * call it.
+ *
+ * Returns the error to report, or null when the URL may be requested.
+ */
+internal fun blockedUrlHostReason(rawUrl: String): String? {
+    val host = runCatching { Url(rawUrl).host }.getOrNull()
+    if (host.isNullOrBlank()) return null
+    if (!FetchUrlTool.isBlockedHost(host)) return null
+    return "blocked host: $host — private, loopback and link-local addresses are not reachable from tools"
+}

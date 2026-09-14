@@ -1,5 +1,6 @@
 package com.inspiredandroid.kai.data
 
+import com.inspiredandroid.kai.tools.UntrustedToolOutput
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -204,6 +205,26 @@ class ChatSystemPromptBuilderTest {
             // When-to-act is a general fundamental and still renders.
             assertTrue("## When to Act" in out)
         }
+    }
+
+    @Test
+    fun `untrusted content rule names the markers tool results carry`() {
+        // The rule and the envelope have to agree: ToolExecutor wraps every result in these
+        // markers, and the prompt is the only thing that tells the model what they mean.
+        val remote = build(SystemPromptVariant.CHAT_REMOTE)
+        val local = build(SystemPromptVariant.CHAT_LOCAL)
+        for (out in listOf(remote, local)) {
+            assertTrue("## Untrusted Content" in out)
+            assertTrue(UntrustedToolOutput.OPEN in out)
+            assertTrue(UntrustedToolOutput.CLOSE in out)
+        }
+    }
+
+    @Test
+    fun `untrusted content rule is omitted without tools`() {
+        // Nothing arrives in markers when no tool can run, so the rule would be noise.
+        val out = build(SystemPromptVariant.CHAT_REMOTE, hasTools = false)
+        assertFalse("## Untrusted Content" in out)
     }
 
     @Test

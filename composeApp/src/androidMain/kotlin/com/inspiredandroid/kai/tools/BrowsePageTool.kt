@@ -54,6 +54,11 @@ object BrowsePageTool : Tool {
         if (!url.startsWith("http://") && !url.startsWith("https://")) {
             return mapOf("success" to false, "error" to "only http and https URLs are allowed")
         }
+        // Same host policy as fetch_url — without it this tool is simply the way around the
+        // SSRF guard that one tool has.
+        blockedUrlHostReason(url)?.let { blocked ->
+            return mapOf("success" to false, "error" to blocked)
+        }
         if (!WebViewPageRenderer.isAvailable()) {
             return mapOf("success" to false, "error" to "System WebView is not available on this device, so pages cannot be rendered")
         }

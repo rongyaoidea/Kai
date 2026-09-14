@@ -69,6 +69,12 @@ jobs:
       - name: Run desktop tests
         run: ./gradlew :composeApp:desktopTest --no-daemon --stacktrace
 
+      # desktopTest compiles the shared module for the JVM only, so nothing here would
+      # catch an error in androidMain. Assemble the debug variant to compile both
+      # androidMain and the app module without signing or publishing anything.
+      - name: Build Android debug variant
+        run: ./gradlew :androidApp:assembleFossDebug --no-daemon --stacktrace
+
       - name: Check for changes
         id: changes
         run: |

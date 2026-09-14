@@ -4,6 +4,9 @@ import com.inspiredandroid.kai.getAvailableTools
 import com.inspiredandroid.kai.getPlatformToolDefinitions
 import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.smartTruncate
+import com.inspiredandroid.kai.tools.ToolApprovalGate
+import com.inspiredandroid.kai.tools.ToolApprovalPolicy
+import com.inspiredandroid.kai.tools.UntrustedToolOutput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
@@ -26,9 +29,15 @@ import kotlinx.serialization.json.longOrNull
 import org.jetbrains.compose.resources.getString
 
 private const val MAX_TOOL_RESULT_LENGTH = 20_000
+private const val MAX_APPROVAL_DETAIL_LENGTH = 600
 
 class ToolExecutor(
     private val toolsProvider: () -> List<Tool> = { getAvailableTools() },
+    /**
+     * Asks the user before a risky tool runs. Null only in tests and on platforms that
+     * build an executor without DI — production always injects one (see `AppModule`).
+     */
+    private val approvalGate: ToolApprovalGate? = null,
 ) {
 
     private val jsonParser = Json { ignoreUnknownKeys = true }
@@ -37,15 +46,24 @@ class ToolExecutor(
         name: String,
         arguments: String,
         conversationId: String? = null,
+        /**
+         * Whether this call belongs to a chat run the user is watching. Non-interactive
+         * runs cannot ask for approval, so risky tools fail there instead of executing.
+         */
+        interactive: Boolean = false,
     ): String {
         val tools = toolsProvider()
         val tool = tools.find { it.schema.name == name }
-            ?: return """{"success": false, "error": "Unknown tool: $name"}"""
+            ?: return toolResult("""{"success": false, "error": "Unknown tool: $name"}""")
 
         val args = try {
             parseJsonToMap(arguments)
         } catch (e: Exception) {
-            return """{"success": false, "error": "Failed to parse arguments: ${e.message}"}"""
+            return toolResult("""{"success": false, "error": "Failed to parse arguments: ${e.message}"}""")
+        }
+
+        if (!isApproved(name, arguments, interactive)) {
+            return toolResult("""{"success": false, "error": "${denialMessage(name, interactive)}"}""")
         }
 
         return try {
@@ -70,16 +88,54 @@ class ToolExecutor(
 
                 else -> """{"result": "$result"}"""
             }
-            truncateResult(resultString)
+            toolResult(truncateResult(resultString))
         } catch (e: TimeoutCancellationException) {
-            """{"success": false, "error": "Tool '$name' timed out after ${tool.timeout}"}"""
+            toolResult("""{"success": false, "error": "Tool '$name' timed out after ${tool.timeout}"}""")
         } catch (e: CancellationException) {
             // Cooperative cancellation (user pressed stop) must propagate, not become a
             // fake tool result the loop would keep reasoning about.
             throw e
         } catch (e: Exception) {
-            """{"success": false, "error": "Tool execution failed: ${e.message}"}"""
+            toolResult("""{"success": false, "error": "Tool execution failed: ${e.message}"}""")
         }
+    }
+
+    /**
+     * Every tool result is marked as untrusted before it reaches the model: the content
+     * usually comes from outside the conversation (a web page, a mail body, an MCP reply).
+     * The matching system-prompt rule is built from the same markers, see
+     * [UntrustedToolOutput].
+     */
+    private fun toolResult(value: String): String = UntrustedToolOutput.wrap(value)
+
+    /**
+     * Risky tools run only after the user says so. A non-interactive run (scheduled task,
+     * heartbeat, silent call) can never ask, so it fails here rather than running a
+     * privileged command unattended.
+     */
+    private suspend fun isApproved(
+        name: String,
+        arguments: String,
+        interactive: Boolean,
+    ): Boolean {
+        val reason = ToolApprovalPolicy.approvalReason(name) ?: return true
+        val gate = approvalGate ?: return true
+        if (!interactive) return false
+        return gate.awaitApproval(
+            toolId = name,
+            toolName = getToolDisplayName(name),
+            reason = reason,
+            detail = arguments.take(MAX_APPROVAL_DETAIL_LENGTH),
+        )
+    }
+
+    private fun denialMessage(
+        name: String,
+        interactive: Boolean,
+    ): String = if (interactive) {
+        "The user denied '$name'. Do not retry it — ask what they want to change."
+    } else {
+        "'$name' needs the user's approval and no chat is open to ask. Tell the user what you tried to run so they can start it from a chat."
     }
 
     private fun truncateResult(result: String): String = result.smartTruncate(MAX_TOOL_RESULT_LENGTH)

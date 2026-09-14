@@ -145,17 +145,20 @@ object McpAdminTools {
             description = "List installed MCP servers and their tools",
             isEnabled = true,
         ),
+        // Installing a server hands the agent a new, attacker-controllable source of tool
+        // descriptions and results, so it is opt-in: the user turns the switch on instead of
+        // discovering that a fetched page already did.
         ToolInfo(
             id = "add_mcp_server",
             name = "Install MCP Server",
             description = "Add and connect an MCP server",
-            isEnabled = true,
+            isEnabled = false,
         ),
         ToolInfo(
             id = "remove_mcp_server",
             name = "Remove MCP Server",
             description = "Remove an installed MCP server",
-            isEnabled = true,
+            isEnabled = false,
         ),
     )
 }

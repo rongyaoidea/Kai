@@ -49,10 +49,12 @@ fun buildAgentToolSet(
     if (appSettings.isToolEnabled("list_mcp_servers")) {
         add(McpAdminTools.listServersTool(mcpServerManager))
     }
-    if (appSettings.isToolEnabled("add_mcp_server")) {
+    // Installing or removing a server changes which tools and tool descriptions enter the
+    // prompt, so both default to off — a user opts in, a fetched web page cannot.
+    if (appSettings.isToolEnabled("add_mcp_server", defaultEnabled = false)) {
         add(McpAdminTools.addServerTool(mcpServerManager))
     }
-    if (appSettings.isToolEnabled("remove_mcp_server")) {
+    if (appSettings.isToolEnabled("remove_mcp_server", defaultEnabled = false)) {
         add(McpAdminTools.removeServerTool(mcpServerManager))
     }
 

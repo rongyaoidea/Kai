@@ -2,6 +2,8 @@ package com.inspiredandroid.kai.data
 
 import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.network.tools.ToolSchema
+import com.inspiredandroid.kai.tools.ToolApprovalGate
+import com.inspiredandroid.kai.tools.UntrustedToolOutput
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.delay
@@ -10,6 +12,7 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
@@ -128,5 +131,106 @@ class ToolExecutorTest {
         executorWith(echo).executeTool("echo", """{"ids": [1, null, 3], "meta": {"a": null, "b": "x"}}""")
         assertTrue(seen?.get("ids") == listOf(1, 3), "array null should be dropped, got: $seen")
         assertTrue(seen?.get("meta") == mapOf("b" to "x"), "object null should be dropped, got: $seen")
+    }
+
+    @Test
+    fun `tool results are marked as untrusted for the model`() = runTest {
+        val result = executorWith(FakeTool { "page contents" }).executeTool("fake_tool", "{}")
+
+        assertTrue(result.startsWith(UntrustedToolOutput.OPEN), "result should open with the marker, got: $result")
+        assertTrue(result.contains("page contents"))
+        assertTrue(result.endsWith(UntrustedToolOutput.CLOSE), "result should close with the marker, got: $result")
+    }
+
+    @Test
+    fun `error results are marked as untrusted too`() = runTest {
+        val result = executorWith(FakeTool { throw IllegalStateException("boom") }).executeTool("fake_tool", "{}")
+
+        assertTrue(result.startsWith(UntrustedToolOutput.OPEN))
+        assertTrue(result.contains("Tool execution failed"))
+    }
+
+    @Test
+    fun `risky tools do not run unattended when no one can approve`() = runTest {
+        var executed = false
+        val tool =
+            FakeTool(name = "privileged_shell") {
+                executed = true
+                "ran"
+            }
+        val gate = ToolApprovalGate()
+        val executor = ToolExecutor(toolsProvider = { listOf(tool) }, approvalGate = gate)
+
+        val result = executor.executeTool("privileged_shell", "{}", interactive = false)
+
+        assertFalse(executed, "an unattended run must not execute a privileged command")
+        assertTrue(result.contains("needs the user's approval"), "got: $result")
+        assertTrue(gate.pending.value == null, "no dialog should be raised for a background run")
+    }
+
+    @Test
+    fun `risky tools wait for approval and run once granted`() = runTest {
+        var executed = false
+        val tool =
+            FakeTool(name = "privileged_shell") {
+                executed = true
+                "ran"
+            }
+        val gate = ToolApprovalGate()
+        val executor = ToolExecutor(toolsProvider = { listOf(tool) }, approvalGate = gate)
+        var result: String? = null
+
+        val job = launch { result = executor.executeTool("privileged_shell", """{"command": "pm list packages"}""", interactive = true) }
+        runCurrent()
+
+        assertFalse(executed, "the tool must not run before the user answers")
+        val pending = gate.pending.value?.request
+        assertTrue(pending != null, "the request should be waiting for the UI")
+        assertTrue(pending.detail.contains("pm list packages"), "the dialog shows the exact command, got: ${pending.detail}")
+
+        gate.approve(pending.id)
+        job.join()
+
+        assertTrue(executed)
+        assertTrue(result?.contains("ran") == true)
+    }
+
+    @Test
+    fun `a denied risky tool reports the denial instead of running`() = runTest {
+        var executed = false
+        val tool =
+            FakeTool(name = "privileged_shell") {
+                executed = true
+                "ran"
+            }
+        val gate = ToolApprovalGate()
+        val executor = ToolExecutor(toolsProvider = { listOf(tool) }, approvalGate = gate)
+        var result: String? = null
+
+        val job = launch { result = executor.executeTool("privileged_shell", "{}", interactive = true) }
+        runCurrent()
+        gate.deny(gate.pending.value?.request?.id ?: error("no pending request"))
+        job.join()
+
+        assertFalse(executed)
+        assertTrue(result?.contains("denied") == true, "got: $result")
+    }
+
+    @Test
+    fun `harmless tools never ask for approval`() = runTest {
+        var executed = false
+        val tool =
+            FakeTool(name = "get_local_time") {
+                executed = true
+                "12:00"
+            }
+        val gate = ToolApprovalGate()
+        val executor = ToolExecutor(toolsProvider = { listOf(tool) }, approvalGate = gate)
+
+        val result = executor.executeTool("get_local_time", "{}", interactive = true)
+
+        assertTrue(executed)
+        assertTrue(result.contains("12:00"))
+        assertTrue(gate.pending.value == null)
     }
 }
