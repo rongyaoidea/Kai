@@ -1,0 +1,8 @@
+Agent task list with pending, in-progress and completed states
+Keyword search over memories and past conversations
+Notification-triggered intents: run a prompt when a matching alert arrives
+Sandbox file tools for paginated reads and exact writes
+browse_page now renders with the System WebView, no browser install needed
+web_act: tap, fill and scroll web pages in a persistent browser session
+Optional per-minute request cap for long tasks
+OpenCode Zen free models work again with the official client identity

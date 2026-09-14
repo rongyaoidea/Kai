@@ -1,0 +1,91 @@
+name: Android Debug APK
+
+# Builds a debuggable APK signed with the repo's shared debug keystore
+# (androidApp/debug.keystore — committed, same key on every run, so debug
+# APKs install as updates over each other) and publishes it as a prerelease.
+#
+# Trigger manually from the Actions tab, or push a tag like `debug-v1`.
+# The tag release workflow (release.yml, real release keystore) is untouched.
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create (default: debug-r<RUN_NUMBER>)"
+        required: false
+        default: ""
+      title:
+        description: "Release title"
+        required: false
+        default: ""
+  push:
+    tags:
+      - 'debug-*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build and publish debug APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set execution flag for gradlew
+        run: chmod +x gradlew
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android Build Tools
+        run: |
+          sdkmanager "build-tools;36.0.0"
+          sdkmanager "build-tools;29.0.3"
+
+      - name: Show debug key fingerprint
+        run: |
+          keytool -list -v -keystore androidApp/debug.keystore \
+            -storepass android -alias androiddebugkey | grep -E "SHA256|Valid"
+
+      - name: Build debug APK
+        run: bash ./gradlew :androidApp:assembleFossDebug --stacktrace
+
+      - name: Rename APK
+        id: apk
+        run: |
+          VERSION=$(grep '^appVersion' gradle/libs.versions.toml | cut -d'"' -f2)
+          SRC=androidApp/build/outputs/apk/foss/debug/androidApp-foss-debug.apk
+          DST="Kai-${VERSION}-foss-debug.apk"
+          cp "$SRC" "$DST"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "asset=$DST" >> "$GITHUB_OUTPUT"
+
+      - name: Publish prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${{ github.ref_name }}"
+          elif [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="debug-r${{ github.run_number }}"
+          fi
+          if [ -n "${{ inputs.title }}" ]; then
+            TITLE="${{ inputs.title }}"
+          else
+            TITLE="Debug build $TAG"
+          fi
+          FPRINT=$(keytool -list -keystore androidApp/debug.keystore -storepass android -alias androiddebugkey 2>/dev/null | grep SHA256 || true)
+          NOTES="Debug APK signed with the repo shared debug key (same key every run, installs as update over previous debug builds). Commit ${{ github.sha }}. $FPRINT"
+          gh release create "$TAG" --prerelease --title "$TITLE" --notes "$NOTES" "${{ steps.apk.outputs.asset }}"

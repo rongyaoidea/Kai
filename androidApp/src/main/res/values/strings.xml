@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Kai 9000</string>
+    <string name="automation_a11y_description">Lets Kai read what\'s on screen in any app and tap, type, and scroll on your behalf when you ask it to automate tasks. Only runs when you enable cross-app automation in Kai\'s settings.</string>
+    <string name="automation_a11y_summary">Kai cross-app automation</string>
+</resources>

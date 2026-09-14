@@ -1,0 +1,8 @@
+Cross-app automation: read and control other apps via accessibility or Shizuku
+Agent can install MCP servers and skills itself
+Faster web search with optional fastCRW backend
+Headless browser reader for JavaScript-heavy pages
+New MiniCPM5 on-device model options
+MCP Apps now render interactive UIs in-app
+More reliable Shizuku privileged shell
+Clearer agent guidance for sandbox and email workflows
