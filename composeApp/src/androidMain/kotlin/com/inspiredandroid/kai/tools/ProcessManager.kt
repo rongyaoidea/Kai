@@ -1,10 +1,16 @@
 package com.inspiredandroid.kai.tools
 
 import com.inspiredandroid.kai.sandbox.LinuxSandboxManager
+import com.inspiredandroid.kai.sandbox.SandboxState
 import org.koin.java.KoinJavaComponent.inject
+import java.io.File
+import java.io.InputStream
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
+
+private const val NATIVE_BG_MAX_OUTPUT = 15_000
 
 class ProcessManager(private val sandboxManager: LinuxSandboxManager) {
 
@@ -39,6 +45,24 @@ class ProcessManager(private val sandboxManager: LinuxSandboxManager) {
             startTime = System.currentTimeMillis(),
         )
         sessions[sessionId] = session
+
+        // Tiered execution, mirroring ShellCommandTool: proot when the sandbox
+        // is Ready, host mksh/toybox otherwise. The session table (and therefore
+        // the manage_process surface) is shared across both tiers.
+        val ready = runCatching { sandboxManager.state.value is SandboxState.Ready }.getOrDefault(false)
+        if (!ready) {
+            if (!runCatching { sandboxManager.isNativeShellAvailable() }.getOrDefault(false)) {
+                sessions.remove(sessionId)
+                return mapOf("success" to false, "error" to "No shell available: install the Linux sandbox in Settings > Tools.")
+            }
+            startNativeBackground(session, command, timeoutSeconds, workingDir, envMap)
+            return mapOf(
+                "success" to true,
+                "session_id" to sessionId,
+                "status" to "running",
+                "message" to "Process started in background (native shell, no sandbox). Use manage_process tool to check status.",
+            )
+        }
 
         val executor = try {
             sandboxManager.createProotExecutor()
@@ -156,6 +180,97 @@ class ProcessManager(private val sandboxManager: LinuxSandboxManager) {
         "timed_out" to timedOut,
         "stdout_length" to stdout.length,
     )
+
+    /**
+     * Native one-shot background job: host `/system/bin/sh` via ProcessBuilder,
+     * mirroring the desktop ProcessManager. Environment applies through the
+     * process environment; the working directory resolves against the native
+     * home (absolute stays, relative anchors there, garbage falls back to it).
+     */
+    private fun startNativeBackground(
+        session: Session,
+        command: String,
+        timeoutSeconds: Long,
+        workingDir: String,
+        envMap: Map<String, String>,
+    ) {
+        CompletableFuture.runAsync {
+            try {
+                val home = sandboxManager.nativeHome
+                val dir = when {
+                    workingDir.isBlank() -> home
+                    else -> {
+                        val candidate = File(workingDir).let { f -> if (f.isAbsolute) f else File(home, workingDir) }
+                        if (candidate.isDirectory) candidate else home
+                    }
+                }
+                val process = ProcessBuilder("/system/bin/sh", "-c", command)
+                    .directory(dir)
+                    .apply { environment().putAll(envMap) }
+                    .start()
+                session.process = process
+                // kill() may race the spawn; honoring the flag here closes that window.
+                if (session.cancelled) {
+                    runCatching { process.destroyForcibly() }
+                    session.finished = true
+                    return@runAsync
+                }
+                val outBuf = StringBuilder()
+                val errBuf = StringBuilder()
+                val outDrain = CompletableFuture.runAsync {
+                    drainBounded(process.inputStream, outBuf) { session.stdout = it }
+                }
+                val errDrain = CompletableFuture.runAsync {
+                    drainBounded(process.errorStream, errBuf) { session.stderr = it }
+                }
+                val completed = try {
+                    process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
+                } catch (_: Exception) {
+                    false
+                }
+                runCatching { outDrain.get(5, TimeUnit.SECONDS) }
+                runCatching { errDrain.get(5, TimeUnit.SECONDS) }
+                runCatching { process.inputStream.close() }
+                runCatching { process.errorStream.close() }
+                runCatching { process.outputStream.close() }
+                if (!session.cancelled) {
+                    if (!completed) {
+                        runCatching { process.destroyForcibly() }
+                        session.timedOut = true
+                        session.exitCode = -1
+                    } else {
+                        session.exitCode = runCatching { process.exitValue() }.getOrDefault(-1)
+                    }
+                    session.stdout = outBuf.toString()
+                    session.stderr = errBuf.toString()
+                }
+            } catch (e: Exception) {
+                if (!session.cancelled) {
+                    session.stderr = e.message ?: "Failed to start process"
+                    session.exitCode = -1
+                }
+            } finally {
+                session.finished = true
+            }
+        }
+    }
+
+    private fun drainBounded(stream: InputStream, buf: StringBuilder, publish: (String) -> Unit) {
+        try {
+            stream.bufferedReader().forEachLine { line ->
+                synchronized(buf) {
+                    if (buf.length < NATIVE_BG_MAX_OUTPUT) {
+                        if (buf.isNotEmpty()) buf.append('\n')
+                        buf.append(line)
+                        publish(buf.toString())
+                    }
+                }
+            }
+        } catch (_: Exception) {
+        } finally {
+            runCatching { stream.close() }
+        }
+    }
 }
 
 /**

@@ -312,9 +312,15 @@ actual fun getAvailableTools(): List<Tool> {
 
         if (appSettings.isSandboxEnabled()) {
             val sandboxManager: LinuxSandboxManager by inject(LinuxSandboxManager::class.java)
+            // Tiered shell: full proot Linux when the sandbox is Ready, host
+            // mksh/toybox otherwise. Both tiers share the execute_shell_command
+            // surface and the manage_process session table — the tools route
+            // internally, so they are always advertised under this toggle.
+            add(ShellCommandTool)
+            add(ProcessManagerTool)
+            // Everything else needs the real rootfs: file tools address /root,
+            // ssh_configure_host writes ~/.ssh/config, skills live in ~/skills/.
             if (sandboxManager.state.value is SandboxState.Ready) {
-                add(ShellCommandTool)
-                add(ProcessManagerTool)
                 add(SshConfigureHostTool)
                 add(SandboxFileTools.readFileTool)
                 add(SandboxFileTools.writeFileTool)

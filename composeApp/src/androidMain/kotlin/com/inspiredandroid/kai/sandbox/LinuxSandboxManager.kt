@@ -377,7 +377,31 @@ class LinuxSandboxManager(
             s
         }
         removed?.reset()
+        nativeShells.close(sessionId)
     }
+
+    /**
+     * Zero-install shell tier: host mksh/toybox, backing `execute_shell_command`
+     * whenever the proot sandbox is not Ready. Home is app-private storage
+     * (`kai-native` under filesDir); sessions still isolate per caller, and
+     * [closeShell] tears both tiers down together.
+     */
+    private val nativeShells = NativeShells(context.filesDir)
+
+    /** Home directory of the native tier. The model's `working_dir` anchors here. */
+    val nativeHome: File get() = nativeShells.home
+
+    fun isNativeShellAvailable(): Boolean = nativeShells.isAvailable
+
+    fun nativeShellFor(sessionId: String): NativeShellSession = nativeShells.shellFor(sessionId)
+
+    /** One-shot native execution for `fresh` calls (no session state in or out). */
+    suspend fun runNativeOneShot(
+        command: String,
+        timeoutSeconds: Long,
+        workingDir: String?,
+        envMap: Map<String, String>,
+    ): Map<String, Any> = nativeShells.runOneShot(command, timeoutSeconds, workingDir, envMap)
 
     /** Empties the session table and hands back the shells that were in it. */
     private fun detachShells(): List<SessionShell> = synchronized(shells) {
