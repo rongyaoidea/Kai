@@ -1,0 +1,22 @@
+# Line endings: LF in the repository, LF in the working tree on every platform.
+#
+# This snapshot was committed from a Windows checkout, so CRLF ended up in the
+# index and `./gradlew` stopped executing on Linux CI (`cannot execute: required
+# file not found` — the shebang gets a trailing CR). Normalizing keeps the tree
+# identical on Windows, Linux, macOS and CI.
+* text=auto
+
+# Entry points must stay LF or they do not run on Linux/macOS.
+gradlew text eol=lf
+*.sh text eol=lf
+
+# Windows batch files want CRLF.
+*.bat text eol=crlf
+
+# Binaries: never rewrite these.
+*.jar binary
+*.png binary
+*.ico binary
+*.pdf binary
+*.keystore binary
+*.so binary
