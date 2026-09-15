@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -27,9 +28,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.long
 import kotlinx.serialization.json.longOrNull
 import org.jetbrains.compose.resources.getString
+import kotlin.time.Duration.Companion.seconds
 
 private const val MAX_TOOL_RESULT_LENGTH = 20_000
 private const val MAX_APPROVAL_DETAIL_LENGTH = 600
+
+/** Display-name lookup must never stall approvals behind slow resources. */
+private val TOOL_NAME_LOOKUP_TIMEOUT = 3.seconds
 
 class ToolExecutor(
     private val toolsProvider: () -> List<Tool> = { getAvailableTools() },
@@ -129,8 +134,15 @@ class ToolExecutor(
         if (interactive && name in ToolApprovalPolicy.shellTools && isShellAutoApproved()) return true
         val gate = approvalGate ?: return true
         if (!interactive) return false
-        // Display-name lookup must never break approvals: fall back to the raw id.
-        val toolName = runCatching { getToolDisplayName(name) }.getOrDefault(name)
+        // Display-name lookup must never break or stall approvals: time it out and
+        // fall back to the raw id. (External cancellation still propagates.)
+        val toolName = try {
+            withTimeoutOrNull(TOOL_NAME_LOOKUP_TIMEOUT) { getToolDisplayName(name) } ?: name
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            name
+        }
         return gate.awaitApproval(
             toolId = name,
             toolName = toolName,
