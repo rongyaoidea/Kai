@@ -573,4 +573,8 @@
     <string name="tool_approval_detail">Requested action</string>
     <string name="tool_approval_approve">Approve</string>
     <string name="tool_approval_deny">Deny</string>
+    <string name="tool_calls_expand_content_description">Show tool calls</string>
+    <string name="tool_calls_succeeded">%1$d succeeded</string>
+    <string name="tool_calls_failed">%1$d failed</string>
+    <string name="tool_calls_trivial">+ %1$d trivial</string>
 </resources>

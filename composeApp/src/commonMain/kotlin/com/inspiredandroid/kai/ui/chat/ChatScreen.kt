@@ -95,6 +95,7 @@ import com.inspiredandroid.kai.ui.chat.composables.HeartbeatFab
 import com.inspiredandroid.kai.ui.chat.composables.PendingSmsBanners
 import com.inspiredandroid.kai.ui.chat.composables.QuestionInput
 import com.inspiredandroid.kai.ui.chat.composables.ServiceSelector
+import com.inspiredandroid.kai.ui.chat.composables.ToolCallsCard
 import com.inspiredandroid.kai.ui.chat.composables.ToolScreenshotPreviewCard
 import com.inspiredandroid.kai.ui.chat.composables.TopBar
 import com.inspiredandroid.kai.ui.chat.composables.TrailingIcon
@@ -759,6 +760,13 @@ private fun ChatModeScreen(
                             val frozenByAssistantId = pairings.first
                             val userIdByAssistantId = pairings.second
                             val executingToolsState = rememberExecutingTools(uiState.history)
+                            // TOOL results keyed by call id, so each assistant turn's tool
+                            // calls can render with their outcomes (see ToolCallsCard).
+                            val toolResultsByCallId = remember(uiState.history) {
+                                uiState.history
+                                    .filter { it.role == History.Role.TOOL && it.toolCallId != null }
+                                    .associate { it.toolCallId!! to it.content }
+                            }
 
                             val fallbackStatusText = uiState.fallbackStatus?.let { status ->
                                 val failed = stringResource(Res.string.fallback_service_failed, status.serviceName, uiErrorText(status.errorReason))
@@ -853,6 +861,12 @@ private fun ChatModeScreen(
                                             }
 
                                             History.Role.ASSISTANT -> {
+                                                val toolCalls = history.toolCalls
+                                                if (!toolCalls.isNullOrEmpty()) {
+                                                    ToolCallsCard(
+                                                        model = buildToolCallsUiModel(toolCalls, toolResultsByCallId),
+                                                    )
+                                                }
                                                 if (history.content.isNotEmpty() && !history.isThinking) {
                                                     val isLastAssistant = history.id == lastAssistantId
                                                     val frozen = frozenByAssistantId[history.id]

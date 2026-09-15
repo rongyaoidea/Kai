@@ -50,6 +50,10 @@ The `open_url` tool accepts both web URLs and `file://` URIs. Each platform open
 
 The `todo` tool tracks multi-step work as a checklist scoped to the calling conversation (falling back to a shared bucket outside one), so lists never leak across chats. Items carry short random ids with pending/in-progress/completed states; every call returns the full list. `add_many` stores a whole plan in one call (blank texts skipped, list cap still applies, both counted as skipped); `edit` rewords an item without changing its id or status; item text over 500 chars is truncated with a warning in the result. State persists in app settings, so progress survives process death. Buckets are capped (50 conversations, 100 items each) with oldest-touched eviction. It is cross-platform and has its own Tools-tab switch, default on.
 
+#### Tool calls in chat
+
+Every assistant turn that invoked tools renders a collapsed card above its reply: tool count with succeeded/failed tallies, one row per call showing only the tool's display name, and per-row expandable result previews. Failures render red but never auto-expand. Trivial context reads (`get_local_time`, `get_location_from_ip`) merge into a single "+ N trivial" line instead of individual rows. Failure is detected from the stored result (`{"success": false, ...}`); free-form output always counts as success. No storage changes were needed — the card pairs the already-persisted assistant `tool_calls` with their `tool` results by call id.
+
 ### Memory (always on)
 
 | Tool | Description |
