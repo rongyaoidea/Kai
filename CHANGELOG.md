@@ -1,3 +1,21 @@
+## v3.5.0 — 2026-09-15
+
+### Features
+- Tool approval gate: privileged shell, shell commands, email sends and MCP/skill installs wait for an explicit user decision; runs that cannot ask (scheduled tasks, heartbeats) fail those tools closed. Tool results are wrapped in untrusted-content markers the prompt explains, and browse_page/web_act now honor fetch_url's private-host block
+- Native shell tier: execute_shell_command and manage_process work without the Linux sandbox, running mksh + toybox on the host with the same persistent per-chat sessions (no packages, ssh or scripting runtimes)
+- Built-in MCP market with China and International tabs; new free endpoints (OctoTrip, Oblique Observer, Hugging Face, Frankfurter FX, AISENSE, Steam Trends, Caiyun Weather)
+- web_search: sources now race in parallel with a 12s budget each, plus count and time (day/week/month) parameters and per-source ok/empty/failed telemetry
+- On-device models get a wider tool allowlist: fetch_url, search_memories, todo and search_conversations join the eight existing entries
+
+### Fixes
+- Native tier: flush partial stderr before the sentinel, kill forked commands on timeout/uninstall, generation-guard the shell watchdog, and drain background output on dedicated threads
+- Settings now shows the same default state the runtime uses for web, automation, MCP admin and skill tools
+- CI: stop requesting the removed `tools` SDK package; release builds use one shared release keystore secret
+
+### Improvements
+- Tool defaults flipped on (web tools, automation read/write, Shizuku, MCP/skill installers); SMS sending stays opt-in and the approval gate still guards risky calls
+- Docs updated to match (tools, sandbox, automation, SMS, notifications, MCP knowledge bundle)
+
 ## v3.4.0 — 2026-09-11
 
 ### Features

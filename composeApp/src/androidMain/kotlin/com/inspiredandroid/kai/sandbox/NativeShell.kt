@@ -49,7 +49,9 @@ class NativeShellSession(home: File) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile private var process: Process? = null
+
     @Volatile private var writer: BufferedWriter? = null
+
     @Volatile private var shellPid: Int = -1
     private val currentSink = AtomicReference<Sink?>(null)
 
