@@ -99,12 +99,13 @@ internal fun ToolCallsCard(
                 )
             }
             if (model.trivialCounts.isNotEmpty()) {
-                val grouped = model.trivialCounts.entries.joinToString { (id, count) ->
+                val groupedParts = mutableListOf<String>()
+                for ((id, count) in model.trivialCounts) {
                     val name = displayName(id)
-                    if (count > 1) "$name ×$count" else name
+                    groupedParts.add(if (count > 1) "$name ×$count" else name)
                 }
                 Text(
-                    text = stringResource(Res.string.tool_calls_trivial, model.trivialCounts.values.sum()) + ": $grouped",
+                    text = stringResource(Res.string.tool_calls_trivial, model.trivialCounts.values.sum()) + ": " + groupedParts.joinToString(),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp),
