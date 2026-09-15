@@ -137,14 +137,24 @@ private fun automationWasUsed(messages: List<History>, fromIndex: Int): Boolean 
 // a couple of string parameters. Excluded by design: memory_learn (4 params + enum),
 // schedule_task / list_tasks / cancel_task (datetime + cron), the entire email family,
 // the heartbeat config tools, and MCP tools.
+//
+// Included beyond the basics because their schemas stay string-simple:
+// fetch_url (url + optional strings; POST misuse is bounded by the SSRF host guard),
+// search_memories (one string), todo (action + two optional strings),
+// search_conversations (one string). All read-only except todo/fetch-POST, which
+// carry no privilege beyond what the app already grants the chat.
 internal val LOCAL_TOOL_ALLOWLIST = setOf(
     "get_local_time",
     "get_location_from_ip",
     "web_search",
     "open_url",
+    "fetch_url",
     "memory_store",
     "memory_forget",
     "memory_reinforce",
+    "search_memories",
+    "todo",
+    "search_conversations",
     "execute_shell_command",
 )
 
