@@ -9,10 +9,17 @@ import kotlin.test.assertTrue
 /**
  * OpenCode Zen rejects requests that arrive without `x-opencode-session`. The id has to be
  * stable for the whole conversation, and no other provider may see the header.
+ *
+ * Go requires the same header, and is reached through an OpenAI-Compatible instance pointed
+ * at `https://opencode.ai/zen/go/v1` — so the header (and Zen's official-User-Agent gate)
+ * also apply to OpenAI-Compatible requests whose URL targets opencode.ai. Go endpoints keep
+ * Kai's own User-Agent per Go's client policy; only Zen spoofs the official one.
  */
 class SessionHeadersTest {
 
     private val header = "x-opencode-session"
+    private val zenChatUrl = "https://opencode.ai/zen/v1/chat/completions"
+    private val goChatUrl = "https://opencode.ai/zen/go/v1/chat/completions"
 
     @Test
     fun openCodeRequestCarriesTheConversationIdAsSessionId() {
@@ -57,5 +64,35 @@ class SessionHeadersTest {
         for (service in Service.all.filter { it != Service.OpenCode }) {
             assertEquals(null, userAgentFor(service), "unexpected UA override for ${service.id}")
         }
+    }
+
+    @Test
+    fun openAICompatiblePointedAtGoCarriesTheSessionHeader() {
+        assertEquals(
+            mapOf(header to "conv-42"),
+            sessionHeadersFor(Service.OpenAICompatible, "conv-42", goChatUrl),
+        )
+    }
+
+    @Test
+    fun openAICompatiblePointedAtZenCarriesSessionAndOfficialUserAgent() {
+        assertEquals(
+            mapOf(header to "conv-42"),
+            sessionHeadersFor(Service.OpenAICompatible, "conv-42", zenChatUrl),
+        )
+        assertEquals(OPENCODE_USER_AGENT, userAgentFor(Service.OpenAICompatible, zenChatUrl))
+    }
+
+    @Test
+    fun goEndpointsKeepKaiUserAgent() {
+        assertEquals(null, userAgentFor(Service.OpenAICompatible, goChatUrl))
+        assertEquals(null, userAgentFor(Service.OpenAICompatible, "https://opencode.ai/zen/go/v1/models"))
+    }
+
+    @Test
+    fun openAICompatibleWithUnrelatedBaseUrlIsUnaffected() {
+        val url = "http://localhost:11434/v1/chat/completions"
+        assertEquals(emptyMap(), sessionHeadersFor(Service.OpenAICompatible, "conv-42", url))
+        assertEquals(null, userAgentFor(Service.OpenAICompatible, url))
     }
 }

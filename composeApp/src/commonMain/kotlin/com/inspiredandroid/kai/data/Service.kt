@@ -91,6 +91,13 @@ sealed class Service(
      * [chatUrl].
      */
     val responsesUrl: String? = null,
+    /**
+     * Anthropic Messages API endpoint (`/v1/messages`), for gateways that serve part of
+     * their catalog in Anthropic's shape. Only reached for models that
+     * [requiresMessagesApi] selects — currently the OpenCode gateway (Zen's Claude/Qwen
+     * models, Go's Claude/Qwen/MiniMax models). Every other model stays on [chatUrl].
+     */
+    val messagesUrl: String? = null,
     val modelsUrl: String? = null,
     val modelsResponseIsArray: Boolean = false,
     val filterActiveStrictly: Boolean = false,
@@ -455,6 +462,8 @@ sealed class Service(
         defaultModel = null,
         settingsKeyPrefix = "opencode",
         chatUrl = "https://opencode.ai/zen/v1/chat/completions",
+        responsesUrl = "https://opencode.ai/zen/v1/responses",
+        messagesUrl = "https://opencode.ai/zen/v1/messages",
         modelsUrl = "https://opencode.ai/zen/v1/models",
         apiKeyUrl = "https://opencode.ai/docs/zen/",
         apiKeyUrlDisplay = "opencode.ai/docs/zen",
@@ -523,6 +532,7 @@ sealed class Service(
         settingsKeyPrefix = "openai-compatible",
         chatUrl = "/chat/completions",
         responsesUrl = "/responses",
+        messagesUrl = "/messages",
         modelsUrl = "/models",
         sortModelsById = true,
     )

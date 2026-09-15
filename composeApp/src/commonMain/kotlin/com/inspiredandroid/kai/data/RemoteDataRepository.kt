@@ -847,12 +847,25 @@ class RemoteDataRepository(
                 val openAIMessages = buildOpenAIMessages(service, messages, systemPrompt, credentials.modelId, declaredToolNames = emptySet())
                 if (requiresResponsesApi(service, credentials.modelId, credentials.baseUrl)) {
                     val response = call {
-                        requests.openAIResponses(service, credentials, toResponsesInput(openAIMessages), requestTimeoutMs = requestTimeoutMs).getOrThrow()
+                        requests.openAIResponses(service, credentials, toResponsesInput(openAIMessages), requestTimeoutMs = requestTimeoutMs, sessionId = activeConversationId()).getOrThrow()
                     }
                     response.throwIfFailed(service)
                     val content = response.outputText
                     if (content == null && strictEmptyResponse) throw OpenAICompatibleEmptyResponseException()
                     return AssistantTurn(content.orEmpty(), response.reasoningSummary)
+                }
+                if (requiresMessagesApi(service, credentials.modelId, credentials.baseUrl)) {
+                    val response = call {
+                        requests.gatewayMessages(
+                            service,
+                            credentials,
+                            messages = buildAnthropicMessages(messages),
+                            systemInstruction = systemPrompt,
+                            sessionId = activeConversationId(),
+                            requestTimeoutMs = requestTimeoutMs,
+                        ).getOrThrow()
+                    }
+                    return AssistantTurn(response.extractText())
                 }
                 val sessionId = activeConversationId()
                 val response = call {
@@ -1162,14 +1175,40 @@ class RemoteDataRepository(
         val declaredToolNames = tools.map { it.schema.name }.toSet()
         // GPT-5.6 and friends reject function tools on chat completions; the same messages are
         // translated to Responses API items instead. Everything before the wire call — prompt
-        // assembly, tool-call pairing, context trimming — is shared.
+        // assembly, tool-call pairing, context trimming — is shared. The OpenCode gateway
+        // additionally serves some families (Zen's Claude/Qwen, Go's Claude/Qwen/MiniMax) on an
+        // Anthropic Messages endpoint; those take the same Anthropic loop shape instead.
         val useResponsesApi = requiresResponsesApi(service, credentials.modelId, credentials.baseUrl)
+        val useMessagesApi = !useResponsesApi && requiresMessagesApi(service, credentials.modelId, credentials.baseUrl)
         val strategy = object : ToolLoopStrategy {
             override suspend fun chat(history: List<History>, systemPrompt: String?): LoopChatResult {
+                if (useMessagesApi) {
+                    val response = retryApiCall {
+                        requests.gatewayMessages(
+                            service,
+                            credentials,
+                            messages = buildAnthropicMessages(history),
+                            tools = tools,
+                            systemInstruction = systemPrompt,
+                            sessionId = activeConversationId(),
+                        ).getOrThrow()
+                    }
+                    val toolUseBlocks = response.content.filter { it.type == "tool_use" }
+                    val toolCallInfos = toolUseBlocks.map { block ->
+                        val argsJson = block.input?.toString() ?: "{}"
+                        ToolCallInfo(
+                            id = block.id ?: "gateway-${Uuid.random()}",
+                            name = block.name ?: "unknown",
+                            arguments = argsJson,
+                        )
+                    }
+                    val textContent = response.content.filter { it.type == "text" }.mapNotNull { it.text }.joinToString("\n")
+                    return LoopChatResult(textContent = textContent, toolCalls = toolCallInfos)
+                }
                 val msgs = trimMessagesForContext(buildOpenAIMessages(service, history, systemPrompt, credentials.modelId, declaredToolNames), contextWindowTokens)
                 if (useResponsesApi) {
                     val response = retryApiCall {
-                        requests.openAIResponses(service, credentials, toResponsesInput(msgs), tools).getOrThrow()
+                        requests.openAIResponses(service, credentials, toResponsesInput(msgs), tools, sessionId = activeConversationId()).getOrThrow()
                     }
                     response.throwIfFailed(service)
                     val text = response.outputText
@@ -1218,6 +1257,9 @@ class RemoteDataRepository(
             }
 
             override suspend fun bailout(history: List<History>, systemPrompt: String?, reason: BailoutReason): String {
+                // The gateway Messages path has no OpenAI-shaped bailout call — plainChat routes
+                // back onto it automatically for these models.
+                if (useMessagesApi) return plainChat(service, credentials, history, "${bailoutPrompt(reason)} $systemPrompt").content
                 // Bailout sends no tools — strip historic tool_calls to satisfy strict validators.
                 val msgs = trimMessagesForContext(buildOpenAIMessages(service, history, systemPrompt, credentials.modelId, declaredToolNames = emptySet()), contextWindowTokens)
                 return makeFinalCallWithoutTools(service, credentials, msgs, reason, useResponsesApi)
@@ -1435,7 +1477,7 @@ class RemoteDataRepository(
         }
         if (useResponsesApi) {
             val response = retryApiCall {
-                requests.openAIResponses(service, credentials, toResponsesInput(bailoutMessages)).getOrThrow()
+                requests.openAIResponses(service, credentials, toResponsesInput(bailoutMessages), sessionId = activeConversationId()).getOrThrow()
             }
             response.throwIfFailed(service)
             return response.outputText.orEmpty()

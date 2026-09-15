@@ -79,16 +79,34 @@ private fun HttpRequestBuilder.applyTimeout(requestTimeoutMs: Long?) {
 private val processSessionId: String by lazy { Uuid.random().toString() }
 
 /**
+ * True when this request targets OpenCode's gateway: the first-party OpenCode service (Zen),
+ * or an OpenAI-Compatible instance pointed at an opencode.ai base URL — the path users take
+ * today to reach Go (`https://opencode.ai/zen/go/v1`) or Zen through a custom entry.
+ */
+internal fun isOpenCodeEndpoint(service: Service, url: String): Boolean {
+    if (service == Service.OpenCode) return true
+    if (service != Service.OpenAICompatible) return false
+    return url.contains("opencode.ai", ignoreCase = true)
+}
+
+/** True for Go endpoints (`/zen/go/…`); false for Zen (`/zen/v1…`). */
+internal fun isOpenCodeGoUrl(url: String): Boolean = url.contains("/zen/go/", ignoreCase = true)
+
+/**
  * OpenCode Zen identifies the calling client by an `x-opencode-session` header and rejects
  * requests that omit it. One id per conversation, so a whole chat reads as a single session
  * upstream; [sessionId] is the conversation id, or null for requests outside any conversation.
+ *
+ * Go requires the same header for routing and prompt caching, so it is also sent when an
+ * OpenAI-Compatible instance points at an opencode.ai base URL (how Go is reached today).
  * No other provider is sent a session header.
  */
-internal fun sessionHeadersFor(service: Service, sessionId: String?): Map<String, String> = if (service == Service.OpenCode) {
-    mapOf("x-opencode-session" to (sessionId?.takeIf { it.isNotBlank() } ?: processSessionId))
-} else {
-    emptyMap()
-}
+internal fun sessionHeadersFor(service: Service, sessionId: String?, url: String = ""): Map<String, String> =
+    if (isOpenCodeEndpoint(service, url)) {
+        mapOf("x-opencode-session" to (sessionId?.takeIf { it.isNotBlank() } ?: processSessionId))
+    } else {
+        emptyMap()
+    }
 
 /**
  * OpenCode Zen's free-model pool gates on User-Agent, not on key or IP: only
@@ -97,13 +115,22 @@ internal fun sessionHeadersFor(service: Service, sessionId: String?): Map<String
  * usage. The `x-opencode-*` headers alone do not unlock it. Ktor's UserAgent
  * plugin only fills the header when absent, so this per-request override wins
  * for Zen while every other provider keeps reporting Kai honestly.
+ *
+ * Go is the opposite: it asks clients to identify with their own user agent
+ * (e.g. `my-coding-agent/1.0`) rather than a generic name, and does not gate on
+ * the official one — so Go endpoints keep Kai's default UA and only gain the
+ * session header.
  */
 internal const val OPENCODE_USER_AGENT = "opencode/1.18.16"
 
-internal fun userAgentFor(service: Service): String? = if (service == Service.OpenCode) OPENCODE_USER_AGENT else null
+internal fun userAgentFor(service: Service, url: String = ""): String? = when {
+    service == Service.OpenCode -> OPENCODE_USER_AGENT
+    service == Service.OpenAICompatible && isOpenCodeEndpoint(service, url) && !isOpenCodeGoUrl(url) -> OPENCODE_USER_AGENT
+    else -> null
+}
 
-private fun HttpRequestBuilder.applySessionHeader(service: Service, sessionId: String?) {
-    sessionHeadersFor(service, sessionId).forEach { (k, v) -> header(k, v) }
+private fun HttpRequestBuilder.applySessionHeader(service: Service, sessionId: String?, url: String = "") {
+    sessionHeadersFor(service, sessionId, url).forEach { (k, v) -> header(k, v) }
 }
 
 /**
@@ -274,8 +301,8 @@ class Requests(
                 applyTimeout(requestTimeoutMs)
                 contentType(ContentType.Application.Json)
                 apiKey?.let { bearerAuth(it) }
-                userAgentFor(service)?.let { header("User-Agent", it) }
-                applySessionHeader(service, sessionId)
+                userAgentFor(service, url)?.let { header("User-Agent", it) }
+                applySessionHeader(service, sessionId, url)
                 customHeaders.forEach { (k, v) -> header(k, v) }
                 setBody(
                     OpenAICompatibleChatRequestDto(
@@ -311,6 +338,7 @@ class Requests(
         input: List<JsonObject>,
         tools: List<Tool> = emptyList(),
         requestTimeoutMs: Long? = null,
+        sessionId: String? = null,
     ): Result<OpenAIResponsesResponseDto> = try {
         rateLimiter?.acquire()
         val apiKey = getApiKeyOrThrow(service, credentials)
@@ -322,7 +350,8 @@ class Requests(
                 applyTimeout(requestTimeoutMs)
                 contentType(ContentType.Application.Json)
                 apiKey?.let { bearerAuth(it) }
-                userAgentFor(service)?.let { header("User-Agent", it) }
+                userAgentFor(service, url)?.let { header("User-Agent", it) }
+                applySessionHeader(service, sessionId, url)
                 setBody(
                     OpenAIResponsesRequestDto(
                         input = input,
@@ -346,6 +375,60 @@ class Requests(
         Result.failure(mapOpenAICompatibleException(e))
     }
 
+    /**
+     * Anthropic Messages API against a gateway that serves part of its catalog in Anthropic's
+     * shape — currently the OpenCode gateway (Zen's Claude/Qwen, Go's Claude/Qwen/MiniMax).
+     * Unlike [anthropicChat] (fixed Anthropic URL, `x-api-key`), the URL resolves from the
+     * service ([Service.messagesUrl], honoring custom base URLs) and auth is a bearer token,
+     * with the gateway session header and User-Agent policy applied like every other
+     * OpenCode-gateway request.
+     */
+    suspend fun gatewayMessages(
+        service: Service,
+        credentials: ServiceCredentials,
+        messages: List<AnthropicChatRequestDto.Message>,
+        tools: List<Tool> = emptyList(),
+        systemInstruction: String? = null,
+        sessionId: String? = null,
+        requestTimeoutMs: Long? = null,
+    ): Result<AnthropicChatResponseDto> = try {
+        rateLimiter?.acquire()
+        val apiKey = getApiKeyOrThrow(service, credentials)
+        val messagesUrl = service.messagesUrl
+            ?: throw OpenAICompatibleGenericException("Messages URL not configured for ${service.displayName}")
+        val url = resolveUrl(service, credentials, messagesUrl)
+        val response: HttpResponse =
+            defaultClient.post(url) {
+                applyTimeout(requestTimeoutMs)
+                contentType(ContentType.Application.Json)
+                apiKey?.let { bearerAuth(it) }
+                userAgentFor(service, url)?.let { header("User-Agent", it) }
+                applySessionHeader(service, sessionId, url)
+                setBody(
+                    AnthropicChatRequestDto(
+                        model = credentials.modelId,
+                        messages = messages,
+                        max_tokens = 8192,
+                        system = systemInstruction?.let { AnthropicChatRequestDto.cachedSystemPrompt(it) },
+                        tools = tools.toRequestTools { it.toAnthropicTool() }?.withCacheBreakpoint(),
+                    ),
+                )
+            }
+        val responseBody = response.bodyAsText()
+        if (response.status.isSuccess()) {
+            val dto = anthropicJson.decodeFromString(AnthropicChatResponseDto.serializer(), responseBody)
+            Result.success(dto)
+        } else {
+            throwAnthropicError(response.status.value, responseBody)
+        }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: AnthropicApiException) {
+        Result.failure(e)
+    } catch (e: Exception) {
+        Result.failure(AnthropicGenericException("Anthropic gateway: ${e.message}", e))
+    }
+
     suspend fun getOpenAICompatibleModels(
         service: Service,
         credentials: ServiceCredentials,
@@ -356,7 +439,8 @@ class Requests(
         val apiKey = getOptionalApiKey(service, credentials)
         val response: HttpResponse = defaultClient.get(url) {
             apiKey?.let { bearerAuth(it) }
-            applySessionHeader(service, sessionId = null)
+            userAgentFor(service, url)?.let { header("User-Agent", it) }
+            applySessionHeader(service, sessionId = null, url)
         }
         if (response.status.isSuccess()) {
             if (service.modelsResponseIsArray) {

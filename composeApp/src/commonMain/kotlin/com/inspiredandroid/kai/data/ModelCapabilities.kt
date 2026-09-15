@@ -136,6 +136,24 @@ internal val RESPONSES_API_MODELS = listOf(
 )
 
 /**
+ * True when this service+model reaches OpenCode's gateway: the first-party OpenCode service
+ * (Zen) or the OpenAI-Compatible service pointed at an opencode.ai base URL (how Go is
+ * reached: `https://opencode.ai/zen/go/v1`). Mirrors `isOpenCodeEndpoint` in Requests.kt,
+ * duplicated here to avoid a data→network package cycle.
+ */
+internal fun isOpenCodeGateway(service: Service, baseUrl: String = ""): Boolean {
+    if (service == Service.OpenCode) return true
+    if (service != Service.OpenAICompatible) return false
+    return baseUrl.contains("opencode.ai", ignoreCase = true)
+}
+
+/** True for Go bases (`…/zen/go/…`); false for Zen. Only meaningful with [isOpenCodeGateway]. */
+internal fun isOpenCodeGoBase(service: Service, baseUrl: String = ""): Boolean {
+    if (service == Service.OpenCode) return false
+    return baseUrl.contains("/zen/go/", ignoreCase = true)
+}
+
+/**
  * True when this service+model must talk to OpenAI's Responses API instead of chat completions.
  *
  * Gated on reaching OpenAI directly: aggregators that resell the same models (OpenRouter, AI
@@ -143,11 +161,61 @@ internal val RESPONSES_API_MODELS = listOf(
  * routing their ids to `/responses` would break them. The OpenAI-Compatible service qualifies when
  * its base URL points at OpenAI, which is what a user reaching for that service as a workaround
  * would configure.
+ *
+ * The OpenCode gateway qualifies separately with its own id list: Zen and Go serve their
+ * GPT/Grok/Muse Spark models (including the free `muse-spark-1.3-contributor-free`) on the
+ * Responses endpoint only.
  */
 internal fun requiresResponsesApi(service: Service, modelId: String, baseUrl: String = ""): Boolean {
     if (service.responsesUrl == null) return false
+    val id = modelId.substringAfterLast('/').lowercase()
+    if (isOpenCodeGateway(service, baseUrl)) {
+        return OPENCODE_RESPONSES_API_MODELS.any { id.startsWith(it) }
+    }
     val isOpenAiEndpoint = service == Service.OpenAI || baseUrl.contains("api.openai.com", ignoreCase = true)
     if (!isOpenAiEndpoint) return false
-    val id = modelId.substringAfterLast('/').lowercase()
     return RESPONSES_API_MODELS.any { id.startsWith(it) }
 }
+
+/**
+ * OpenCode-gateway model id prefixes served on the Responses endpoint. Covers Zen's and Go's
+ * GPT, Grok and Muse Spark rows (per opencode.ai/docs/zen and /go) — every `gpt-5*`/`gpt-6*`
+ * tier, every `grok-*`, and `muse-spark-*` including the free contributor tier.
+ */
+internal val OPENCODE_RESPONSES_API_MODELS = listOf(
+    "gpt-5",
+    "gpt-6",
+    "grok",
+    "muse-spark",
+)
+
+/**
+ * True when this service+model must talk to the gateway's Anthropic Messages endpoint
+ * instead of chat completions. Only the OpenCode gateway qualifies: Zen lists its Claude and
+ * Qwen models on `/messages`, Go additionally serves its MiniMax models there (Zen serves
+ * the same MiniMax ids on chat completions, so the Go base switches lists).
+ */
+internal fun requiresMessagesApi(service: Service, modelId: String, baseUrl: String = ""): Boolean {
+    if (service.messagesUrl == null) return false
+    if (!isOpenCodeGateway(service, baseUrl)) return false
+    val id = modelId.substringAfterLast('/').lowercase()
+    val candidates = if (isOpenCodeGoBase(service, baseUrl)) {
+        OPENCODE_GO_MESSAGES_API_MODELS
+    } else {
+        OPENCODE_ZEN_MESSAGES_API_MODELS
+    }
+    return candidates.any { id.startsWith(it) }
+}
+
+/** Zen serves these families on `zen/v1/messages` (Anthropic shape). */
+internal val OPENCODE_ZEN_MESSAGES_API_MODELS = listOf(
+    "claude",
+    "qwen",
+)
+
+/** Go serves these families on `zen/go/v1/messages`; MiniMax additionally (unlike Zen). */
+internal val OPENCODE_GO_MESSAGES_API_MODELS = listOf(
+    "claude",
+    "qwen",
+    "minimax",
+)
