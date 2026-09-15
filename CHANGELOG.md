@@ -1,3 +1,14 @@
+## v3.8.0 — 2026-09-15
+
+### Features
+- Dedicated OpenCode Go preset: separate `zen/go/v1` gateway service with its own catalog (DeepSeek V4, Kimi, Qwen, GLM, MiniMax, …), Kai's own User-Agent per Go's client policy, shared session header and per-family chat/Responses/Messages routing
+- Tool calls render in chat: each assistant turn with tool calls shows a collapsed card with succeeded/failed tallies, name-only rows, per-row result previews, red failures without auto-expand, and trivial reads merged into one line
+- Risky-tools auto-approve: Settings → Tools offers Ask every time (default) vs Always allow for shell commands, emails and installs; background runs still fail closed
+- todo tool: `add_many` stores a whole checklist in one call, `edit` rewords without id churn, over-length text warns instead of silently truncating
+
+### Fixes
+- Approval display-name lookup can no longer break or stall the approval dialog (raw tool id fallback with timeout)
+
 ## v3.7.0 — 2026-09-15
 
 ### Features
