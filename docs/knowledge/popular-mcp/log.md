@@ -1,5 +1,14 @@
 # Popular MCP knowledge update log
 
+## 2026-09-14
+
+* **Update**: Web research + live probe (initialize with 2026-07-28 → 2024-11-05 fallback like McpClient + `tools/list`, browser UA, retry-once on timeout/5xx).
+  * **Re-attested live (13/13 kept)** — Context7, MDN, DeepWiki, Parallel Search, Yahoo Finance, CoinGecko, Jina AI (no key), Open-Meteo Weather, Kiwi.com, Malwarebytes, tldraw, Find-A-Domain, SubwayInfo NYC.
+  * **Added (5)** — OctoTrip Rental Cars, Oblique Observer (free tier only; paid `oblique.markets` catalog stays out), Hugging Face, Frankfurter FX (official), AISENSE (28 tools; heavy but all no-key utilities).
+  * **Probe lesson** — `Python-urllib` UA gets edge-403s on five hosts; browser UA passes. A 403 alone is not auth-gating.
+  * 13 → 18 hosts. Runtime list, README table, and this bundle updated together.
+* **Pending**: set `verified` in servers.md once desktopTest-PopularMcpServers goes green on CI.
+
 ## 2026-08-12
 
 * **Update**: Live probe via `process:update-popular-mcp-servers` (initialize protocol `2024-11-05` + `tools/list`).

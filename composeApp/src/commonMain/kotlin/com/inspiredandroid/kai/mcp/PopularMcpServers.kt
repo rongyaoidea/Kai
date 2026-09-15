@@ -95,6 +95,31 @@ val popularMcpServers = listOf(
         url = "https://subwayinfo.nyc/mcp",
         description = "Real-time NYC transit info",
     ),
+    PopularMcpServer(
+        name = "OctoTrip Rental Cars",
+        url = "https://mcp.octotrip.app/rental-cars/mcp",
+        description = "Rental car discovery with real-time pricing",
+    ),
+    PopularMcpServer(
+        name = "Oblique Observer",
+        url = "https://remote.observer/mcp",
+        description = "Free market data, provider lookup, experiment scoreboard",
+    ),
+    PopularMcpServer(
+        name = "Hugging Face",
+        url = "https://huggingface.co/mcp",
+        description = "Search Hugging Face models, datasets, and repos",
+    ),
+    PopularMcpServer(
+        name = "Frankfurter FX",
+        url = "https://mcp.frankfurter.dev/",
+        description = "ECB currency reference rates and conversion",
+    ),
+    PopularMcpServer(
+        name = "AISENSE",
+        url = "https://aisenseapi.com/mcp",
+        description = "Time, UUID, short links, temp storage, webhooks, disposable inbox, human approvals (28 tools)",
+    ),
 )
 
 /** Merge [defaults] into [existing], keeping any header key the user already set (case-insensitive). */

@@ -4,9 +4,9 @@ title: Popular MCP servers
 description: Curated free Streamable HTTP MCP endpoints for Kai’s one-tap add sheet.
 tags: [mcp, popular-servers]
 status: stable
-stale_after: 2026-08-26
-generated: { by: process:update-popular-mcp-servers, at: 2026-08-12T20:49:34Z }
-verified: { by: process:desktopTest-PopularMcpServers, at: 2026-08-12T20:51:16Z }
+stale_after: 2026-09-28
+generated: { by: process:update-popular-mcp-servers, at: 2026-09-14T21:30:00Z }
+verified: { by: process:desktopTest-PopularMcpServers, at: PENDING-CI }
 sources:
   - id: selection-policy
     resource: /selection-policy.md
@@ -30,7 +30,7 @@ Replace this snapshot only via the [refresh playbook](refresh-playbook.md).
 
 # Current set
 
-Snapshot mirrored into `popularMcpServers` (runtime). 13 hosts.
+Snapshot mirrored into `popularMcpServers` (runtime). 18 hosts.
 
 | Name | URL | Auth | Probe | Tools |
 |---|---|---|---|---|
@@ -46,19 +46,26 @@ Snapshot mirrored into `popularMcpServers` (runtime). 13 hosts.
 | Malwarebytes | `https://scamguard.malwarebytes.com/claude/mcp` | none | attested live | 6 — `reputation-check_link`, `reputation-check_phone`, `reputation-check_email`, `reputation-report`, `reputation-whois`, `reputation-scan_all` |
 | tldraw | `https://tldraw-mcp-app.tldraw.workers.dev/mcp` | none | attested live | 6 — `search`, `exec`, `_exec_callback`, `_get_canvas_state`, `read_checkpoint`, `save_checkpoint` |
 | Find-A-Domain | `https://api.findadomain.dev/mcp` | none | attested live | 2 — `check_domain`, `list_tlds` |
-| SubwayInfo NYC | `https://subwayinfo.nyc/mcp` | none | attested live | 25 — MTA / bus / ferry arrivals and alerts |
+| SubwayInfo NYC | `https://subwayinfo.nyc/mcp` | none | attested live | 25 — MTA / bus / ferry / bike / rail arrivals and alerts |
+| OctoTrip Rental Cars | `https://mcp.octotrip.app/rental-cars/mcp` | none | attested live | 1 — `search` |
+| Oblique Observer | `https://remote.observer/mcp` | none | attested live | 5 — `bazaar_pulse`, `find_provider`, `market_stats`, `experiment_scoreboard`, `crawler_watch` |
+| Hugging Face | `https://huggingface.co/mcp` | none | attested live | 4 — `hf_whoami`, `hub_repo_search`, `hub_repo_details`, `hf_fs` |
+| Frankfurter FX | `https://mcp.frankfurter.dev/` | none | attested live | 4 — `get_rates`, `convert`, `list_currencies`, `list_providers` |
+| AISENSE | `https://aisenseapi.com/mcp` | none | attested live | 28 — time/uuid/links/storage/webhooks/approvals/wake/heartbeat/lease/inbox/queue |
 
 # Snapshot
 
 | Field | Value |
 |---|---|
-| Probed | 2026-08-12T20:49:34Z |
-| Handshake | `initialize` protocol `2024-11-05` + `notifications/initialized` + `tools/list` |
-| Current | 13 attested live |
-| Dropped this refresh | Manifold Markets (`https://api.manifold.markets/v0/mcp`) — Cloudflare **526** invalid origin TLS, `retryable: false` |
+| Probed | 2026-09-14T21:30:00Z |
+| Handshake | `initialize` (2026-07-28 → 2025-11-25 → … → 2024-11-05 fallback, like McpClient) + `notifications/initialized` + `tools/list`, browser User-Agent |
+| Current | 18 attested live (13 kept + 5 added) |
+| Dropped this refresh | none |
 
 # Notes
 
 - Jina AI still uses `requiresAuth: true` in Kotlin so the add sheet shows a key field. The probe listed 22 tools without a key; search tools still need a free jina.ai key.
 - `remote.mcpservers.org` Fetch and Sequential Thinking stay out (removed earlier).
+- Probe hardening: five hosts (Parallel, Yahoo Finance, CoinGecko, tldraw, SubwayInfo) 403 a `Python-urllib` UA at the edge but pass with a browser UA — future probes must send one, and a 403 is not proof of auth-gating.
+- Considered but excluded: Mapbox (`mcp.mapbox.com/mcp` — 401 on initialize, token required), Pipeworx npm gateway (`gateway.pipeworx.io/npm/mcp` — live but 41 tools incl. betting helpers, too bloated for one-tap), Verifyum/aamio (same operator as AISENSE; on-chain writes / stranger content — wrong risk profile for one-tap), SEC EDGAR hosts (key-gated), HN/Reddit/Wikipedia/arXiv/Open Library (no hosted Streamable HTTP endpoint found — stdio/self-host only), OctoTrip Flights (duplicate of Kiwi.com).
 - Do not add replacement hosts without an explicit product decision.
