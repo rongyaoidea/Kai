@@ -50,6 +50,7 @@ internal fun ToolCallsCard(
 ) {
     var expanded by remember { mutableStateOf(false) }
     val definitions = remember { getPlatformToolDefinitions() }
+    @Composable
     fun displayName(toolId: String): String {
         val info = definitions.find { it.id == toolId }
         return info?.nameRes?.let { stringResource(it) } ?: info?.name ?: toolId
