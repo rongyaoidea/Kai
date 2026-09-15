@@ -35,7 +35,7 @@ The component that looks up a tool by name, parses JSON arguments into a typed m
 | `get_location_from_ip` | Get estimated location from IP address | Enabled |
 | `open_url` | Open a URL, link, or local file on the device | Enabled |
 | `fetch_url` | Fetch an http(s) URL and return readable text plus outbound links (GET, POST, HEAD). Blocks private/loopback hosts, including hex/octal/single-number IP disguises and zone-scoped IPv6 loopback literals; redirects are followed automatically; non-HTML bodies are truncated like HTML; a request body is only accepted with POST. Used for reading pages and acting on links from emails (e.g. RFC 8058 one-click unsubscribe). | Enabled |
-| `todo` | Per-conversation task checklist (add/list/start/done/reopen/remove/clear with pending/in-progress/completed states), persisted so progress survives restarts | Enabled |
+| `todo` | Per-conversation task checklist (add/add_many/list/start/done/reopen/edit/remove/clear with pending/in-progress/completed states), persisted so progress survives restarts | Enabled |
 
 #### open_url platform behavior
 
@@ -48,7 +48,7 @@ The `open_url` tool accepts both web URLs and `file://` URIs. Each platform open
 
 #### Task list
 
-The `todo` tool tracks multi-step work as a checklist scoped to the calling conversation (falling back to a shared bucket outside one), so lists never leak across chats. Items carry short random ids with pending/in-progress/completed states; every call returns the full list. State persists in app settings, so progress survives process death. Buckets are capped (50 conversations, 100 items each) with oldest-touched eviction. It is cross-platform and has its own Tools-tab switch, default on.
+The `todo` tool tracks multi-step work as a checklist scoped to the calling conversation (falling back to a shared bucket outside one), so lists never leak across chats. Items carry short random ids with pending/in-progress/completed states; every call returns the full list. `add_many` stores a whole plan in one call (blank texts skipped, list cap still applies, both counted as skipped); `edit` rewords an item without changing its id or status; item text over 500 chars is truncated with a warning in the result. State persists in app settings, so progress survives process death. Buckets are capped (50 conversations, 100 items each) with oldest-touched eviction. It is cross-platform and has its own Tools-tab switch, default on.
 
 ### Memory (always on)
 

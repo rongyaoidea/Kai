@@ -100,4 +100,79 @@ class TodoStoreTest {
         assertTrue(over.isFailure)
         assertEquals(100, s.list("c").size)
     }
+
+    @Test
+    fun `addMany stores a whole checklist in one write`() = runTest {
+        val s = store()
+
+        val outcome = s.addMany("c", listOf("first", "  ", "second")).getOrThrow()
+
+        assertEquals(2, outcome.added.size)
+        assertEquals(1, outcome.skipped)
+        assertEquals(listOf("first", "second"), s.list("c").map { it.text })
+    }
+
+    @Test
+    fun `addMany stops at the cap and reports skipped`() = runTest {
+        val s = store()
+        repeat(99) { s.add("c", "item $it").getOrThrow() }
+
+        val outcome = s.addMany("c", listOf("fits", "overflows", "also overflows")).getOrThrow()
+
+        assertEquals(listOf("fits"), outcome.added.map { it.text })
+        assertEquals(2, outcome.skipped)
+        assertEquals(100, s.list("c").size)
+    }
+
+    @Test
+    fun `addMany fails when nothing could be added`() = runTest {
+        val s = store()
+
+        assertTrue(s.addMany("c", listOf("  ", "")).isFailure)
+        assertTrue(s.list("c").isEmpty())
+    }
+
+    @Test
+    fun `setText rewords without touching status`() = runTest {
+        val s = store()
+        val item = s.add("c", "old wording").getOrThrow()
+        s.setStatus("c", item.id, TodoStatus.IN_PROGRESS)
+
+        assertTrue(s.setText("c", item.id, "new wording"))
+
+        val updated = s.list("c").single()
+        assertEquals("new wording", updated.text)
+        assertEquals(TodoStatus.IN_PROGRESS, updated.effectiveStatus())
+    }
+
+    @Test
+    fun `setText rejects unknown ids and blank text`() = runTest {
+        val s = store()
+        val item = s.add("c", "keep").getOrThrow()
+
+        assertFalse(s.setText("c", "nope", "whatever"))
+        assertFalse(s.setText("c", item.id, "   "))
+        assertEquals("keep", s.list("c").single().text)
+    }
+
+    @Test
+    fun `tool add_many and edit round-trip through execute`() = runTest {
+        val s = store()
+        val tool = TodoTools.todoTool(s)
+
+        @Suppress("UNCHECKED_CAST")
+        val added = tool.execute(mapOf("action" to "add_many", "texts" to listOf("a", "b"))) as Map<String, Any>
+        assertEquals(true, added["success"])
+        val ids = added["added"] as List<String>
+        assertEquals(2, ids.size)
+
+        @Suppress("UNCHECKED_CAST")
+        val edited = tool.execute(mapOf("action" to "edit", "id" to ids[0], "text" to "a2")) as Map<String, Any>
+        assertEquals(true, edited["success"])
+        assertEquals("a2", s.list(TodoStore.DEFAULT_BUCKET).first { it.id == ids[0] }.text)
+
+        @Suppress("UNCHECKED_CAST")
+        val missing = tool.execute(mapOf("action" to "edit", "id" to "nope", "text" to "x")) as Map<String, Any>
+        assertEquals(false, missing["success"])
+    }
 }

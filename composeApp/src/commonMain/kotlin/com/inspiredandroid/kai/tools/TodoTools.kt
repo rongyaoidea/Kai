@@ -37,6 +37,12 @@ object TodoStatus {
     const val COMPLETED = "completed"
 }
 
+/** Outcome of [TodoStore.addMany]: the items stored, plus inputs skipped as blank or over-cap. */
+data class AddManyResult(
+    val added: List<TodoItem>,
+    val skipped: Int,
+)
+
 @Serializable
 private data class TodoList(
     val items: List<TodoItem> = emptyList(),
@@ -83,6 +89,59 @@ class TodoStore(appSettings: AppSettings) {
         } else {
             Result.success(added!!)
         }
+    }
+
+    /**
+     * Adds up to a whole checklist in one write. Blank texts are skipped and the
+     * list cap still applies — [AddManyResult.skipped] counts both. Fails only when
+     * nothing could be added at all.
+     */
+    suspend fun addMany(bucket: String, texts: List<String>): Result<AddManyResult> {
+        var added: List<TodoItem> = emptyList()
+        var skipped = 0
+        backing.update { all ->
+            val current = all[bucket]?.items.orEmpty()
+            val room = (MAX_ITEMS_PER_LIST - current.size).coerceAtLeast(0)
+            val fresh = texts.map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .take(room)
+                .map {
+                    TodoItem(
+                        id = newId(),
+                        text = it.take(MAX_TEXT_CHARS),
+                        createdAtEpochMs = nowMs(),
+                    )
+                }
+            skipped = texts.size - fresh.size
+            added = fresh
+            if (fresh.isEmpty()) all else touch(all, bucket, current + fresh)
+        }
+        return if (added.isEmpty()) {
+            Result.failure(IllegalStateException("Nothing to add — texts were blank or the list is full ($MAX_ITEMS_PER_LIST)."))
+        } else {
+            Result.success(AddManyResult(added, skipped))
+        }
+    }
+
+    /** Rewords an item without changing its id or status. Blank text is rejected. */
+    suspend fun setText(bucket: String, id: String, text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+        var found = false
+        backing.update { all ->
+            val current = all[bucket]?.items.orEmpty()
+            val updated = current.map {
+                if (it.id == id) {
+                    found = true
+                    it.copy(text = trimmed.take(MAX_TEXT_CHARS))
+                } else {
+                    it
+                }
+            }
+            if (!found) return@update all
+            touch(all, bucket, updated)
+        }
+        return found
     }
 
     suspend fun setStatus(bucket: String, id: String, status: String): Boolean {
@@ -158,7 +217,7 @@ class TodoStore(appSettings: AppSettings) {
         const val DEFAULT_BUCKET = "default"
         private const val MAX_ITEMS_PER_LIST = 100
         private const val MAX_BUCKETS = 50
-        private const val MAX_TEXT_CHARS = 500
+        internal const val MAX_TEXT_CHARS = 500
 
         @OptIn(ExperimentalTime::class)
         private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
@@ -174,15 +233,17 @@ object TodoTools {
             name = "todo",
             description = "Track multi-step work as a checklist scoped to THIS conversation. " +
                 "Use it when a task has 3+ steps so progress survives long tool loops and app restarts — " +
-                "every call returns the full list with ids and statuses. Keep item text short; " +
-                "mark the item you are working on started, complete it when done, and prefer updating " +
+                "every call returns the full list with ids and statuses. Prefer add_many with the whole " +
+                "plan over repeated add calls; keep item text short. " +
+                "Mark the item you are working on started, complete it when done, and prefer updating " +
                 "the list over narrating progress in chat. " +
-                "Actions: add (params: text), list, start (params: id), done (params: id), " +
-                "reopen (params: id), remove (params: id), clear (drops finished items).",
+                "Actions: add (params: text), add_many (params: texts array), list, start (params: id), done (params: id), " +
+                "reopen (params: id), edit (params: id, text), remove (params: id), clear (drops finished items).",
             parameters = mapOf(
-                "action" to ParameterSchema("string", "One of: add, list, start, done, reopen, remove, clear (required)", true),
-                "text" to ParameterSchema("string", "Item text for add", false),
-                "id" to ParameterSchema("string", "Item id from list (for start, done, reopen, remove)", false),
+                "action" to ParameterSchema("string", "One of: add, add_many, list, start, done, reopen, edit, remove, clear (required)", true),
+                "text" to ParameterSchema("string", "Item text for add, new text for edit", false),
+                "texts" to ParameterSchema("array", "Item texts for add_many (array of strings)", false),
+                "id" to ParameterSchema("string", "Item id from list (for start, done, reopen, edit, remove)", false),
             ),
         )
 
@@ -207,8 +268,36 @@ object TodoTools {
                 "add" -> {
                     val text = args["text"]?.toString().orEmpty()
                     store.add(bucket, text).fold(
-                        onSuccess = { snapshot() + mapOf("added" to it.id) },
+                        onSuccess = {
+                            var result = snapshot() + mapOf("added" to it.id)
+                            if (text.trim().length > TodoStore.MAX_TEXT_CHARS) {
+                                result += mapOf("warning" to "Text truncated to ${TodoStore.MAX_TEXT_CHARS} chars")
+                            }
+                            result
+                        },
                         onFailure = { mapOf("success" to false, "error" to (it.message ?: "could not add todo")) },
+                    )
+                }
+
+                "add_many" -> {
+                    val texts = (args["texts"] as? List<*>).orEmpty().map { it.toString() }
+                    if (texts.isEmpty()) {
+                        return mapOf("success" to false, "error" to "texts must be a non-empty array of strings")
+                    }
+                    store.addMany(bucket, texts).fold(
+                        onSuccess = { outcome ->
+                            var result: Map<String, Any> = snapshot() + mapOf(
+                                "added" to outcome.added.map { it.id },
+                            )
+                            if (outcome.skipped > 0) {
+                                result += mapOf("skipped" to outcome.skipped)
+                            }
+                            if (texts.any { it.trim().length > TodoStore.MAX_TEXT_CHARS }) {
+                                result += mapOf("warning" to "Long texts truncated to ${TodoStore.MAX_TEXT_CHARS} chars")
+                            }
+                            result
+                        },
+                        onFailure = { mapOf("success" to false, "error" to (it.message ?: "could not add todos")) },
                     )
                 }
 
@@ -217,6 +306,21 @@ object TodoTools {
                 "done" -> transition(args["id"]?.toString()?.trim().orEmpty(), TodoStatus.COMPLETED, "done")
 
                 "reopen" -> transition(args["id"]?.toString()?.trim().orEmpty(), TodoStatus.PENDING, "reopen")
+
+                "edit" -> {
+                    val id = args["id"]?.toString()?.trim().orEmpty()
+                    val text = args["text"]?.toString().orEmpty()
+                    if (id.isEmpty()) return mapOf("success" to false, "error" to "id is required for edit")
+                    if (text.trim().isEmpty()) return mapOf("success" to false, "error" to "text is required for edit")
+                    if (!store.setText(bucket, id, text)) {
+                        return mapOf("success" to false, "error" to "No todo with id $id — call list first")
+                    }
+                    var result = snapshot()
+                    if (text.trim().length > TodoStore.MAX_TEXT_CHARS) {
+                        result += mapOf("warning" to "Text truncated to ${TodoStore.MAX_TEXT_CHARS} chars")
+                    }
+                    result
+                }
 
                 "remove" -> {
                     val id = args["id"]?.toString()?.trim().orEmpty()
@@ -232,7 +336,7 @@ object TodoTools {
                     snapshot() + mapOf("cleared" to removed)
                 }
 
-                else -> mapOf("success" to false, "error" to "action must be add|list|start|done|reopen|remove|clear")
+                else -> mapOf("success" to false, "error" to "action must be add|add_many|list|start|done|reopen|edit|remove|clear")
             }
         }
     }
