@@ -297,7 +297,13 @@ class ToolExecutorTest {
         var result: String? = null
 
         val job = launch { result = executor.executeTool("compose_email", "{}", interactive = true) }
-        runCurrent()
+        // getToolDisplayName suspends on resource IO, which a single runCurrent()
+        // does not flush — pump the scheduler until the dialog is up.
+        for (i in 0 until 100) {
+            runCurrent()
+            if (gate.pending.value != null) break
+            testScheduler.advanceTimeBy(50)
+        }
         gate.deny(gate.pending.value?.request?.id ?: error("mail must still ask"))
         job.join()
 
