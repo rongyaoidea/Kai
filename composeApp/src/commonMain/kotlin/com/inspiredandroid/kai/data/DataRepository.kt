@@ -107,9 +107,9 @@ interface DataRepository {
     fun getMaxToolSteps(): Int
     fun setMaxToolSteps(steps: Int)
 
-    /** Whether shell commands skip the approval dialog (Settings → Tools). */
-    fun isShellAutoApprove(): Boolean
-    fun setShellAutoApprove(autoApprove: Boolean)
+    /** Whether risky tools skip the approval dialog (Settings → Tools). */
+    fun isRiskyToolsAutoApprove(): Boolean
+    fun setRiskyToolsAutoApprove(autoApprove: Boolean)
 
     // MCP servers
     fun getMcpServers(): List<McpServerConfig>

@@ -599,14 +599,14 @@ class AppSettings(internal val settings: Settings) {
     }
 
     /**
-     * Whether shell commands (`execute_shell_command`, `privileged_shell`) run without
-     * asking. Default false (ask every time). Chosen in Settings → Tools; background
-     * runs still fail closed regardless of this setting.
+     * Whether risky tools (shell commands, outgoing mail, MCP/skill installs) run
+     * without asking. Default false (ask every time). Chosen in Settings → Tools;
+     * background runs still fail closed regardless of this setting.
      */
-    fun isShellAutoApprove(): Boolean = settings.getBoolean(KEY_SHELL_AUTO_APPROVE, false)
+    fun isRiskyToolsAutoApprove(): Boolean = settings.getBoolean(KEY_RISKY_TOOLS_AUTO_APPROVE, false)
 
-    fun setShellAutoApprove(autoApprove: Boolean) {
-        settings.putBoolean(KEY_SHELL_AUTO_APPROVE, autoApprove)
+    fun setRiskyToolsAutoApprove(autoApprove: Boolean) {
+        settings.putBoolean(KEY_RISKY_TOOLS_AUTO_APPROVE, autoApprove)
     }
 
     // Heartbeat memory maintenance: review rotting/duplicate rows each run.
@@ -725,7 +725,7 @@ class AppSettings(internal val settings: Settings) {
         const val KEY_NOTIFICATION_INTENTS = "notification_intents"
         const val KEY_API_MAX_RPM = "api_max_requests_per_minute"
         const val KEY_MAX_TOOL_STEPS = "max_tool_steps"
-        const val KEY_SHELL_AUTO_APPROVE = "shell_auto_approve"
+        const val KEY_RISKY_TOOLS_AUTO_APPROVE = "risky_tools_auto_approve"
 
         /** Slider bounds for [getMaxToolSteps] (Settings → Tools). */
         const val MIN_TOOL_STEPS = 20

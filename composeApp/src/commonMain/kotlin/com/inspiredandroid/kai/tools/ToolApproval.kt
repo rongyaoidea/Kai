@@ -36,13 +36,6 @@ object ToolApprovalPolicy {
 
     /** Why [toolId] needs approval, or null when it may run unattended. */
     fun approvalReason(toolId: String): String? = approvals[toolId]
-
-    /**
-     * Tools covered by the shell auto-approve setting (Settings → Tools):
-     * the two ways the agent runs commands. Everything else in [approvals]
-     * always asks — mail and installs are never silently allowed.
-     */
-    val shellTools = setOf("execute_shell_command", "privileged_shell")
 }
 
 /** One action waiting for the user's yes/no. */

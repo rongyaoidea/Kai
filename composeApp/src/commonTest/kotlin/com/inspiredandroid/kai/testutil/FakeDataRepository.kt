@@ -378,12 +378,12 @@ class FakeDataRepository : DataRepository {
         storedMaxToolSteps = steps
     }
 
-    var storedShellAutoApprove: Boolean = false
+    var storedRiskyToolsAutoApprove: Boolean = false
 
-    override fun isShellAutoApprove(): Boolean = storedShellAutoApprove
+    override fun isRiskyToolsAutoApprove(): Boolean = storedRiskyToolsAutoApprove
 
-    override fun setShellAutoApprove(autoApprove: Boolean) {
-        storedShellAutoApprove = autoApprove
+    override fun setRiskyToolsAutoApprove(autoApprove: Boolean) {
+        storedRiskyToolsAutoApprove = autoApprove
     }
 
     // MCP servers

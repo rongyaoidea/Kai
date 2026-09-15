@@ -44,10 +44,10 @@ class ToolExecutor(
      */
     private val approvalGate: ToolApprovalGate? = null,
     /**
-     * Whether shell commands skip the approval dialog (Settings → Tools).
+     * Whether risky tools skip the approval dialog (Settings → Tools).
      * Read per call so flipping the setting takes effect immediately.
      */
-    private val isShellAutoApproved: () -> Boolean = { false },
+    private val isRiskyToolsAutoApproved: () -> Boolean = { false },
 ) {
 
     private val jsonParser = Json { ignoreUnknownKeys = true }
@@ -130,8 +130,8 @@ class ToolExecutor(
     ): Boolean {
         val reason = ToolApprovalPolicy.approvalReason(name) ?: return true
         // Auto-approve covers interactive chat runs only; background runs still fail
-        // closed below so a scheduled task can never run shell unattended.
-        if (interactive && name in ToolApprovalPolicy.shellTools && isShellAutoApproved()) return true
+        // closed below so a scheduled task can never run risky tools unattended.
+        if (interactive && isRiskyToolsAutoApproved()) return true
         val gate = approvalGate ?: return true
         if (!interactive) return false
         // Display-name lookup must never break or stall approvals: time it out and

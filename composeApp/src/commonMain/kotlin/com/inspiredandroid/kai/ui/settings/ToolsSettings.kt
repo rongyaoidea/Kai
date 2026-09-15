@@ -50,8 +50,8 @@ internal fun ToolsContent(
     onToggleTool: (String, Boolean) -> Unit,
     maxToolSteps: Int,
     onChangeMaxToolSteps: (Int) -> Unit,
-    shellAutoApprove: Boolean,
-    onChangeShellAutoApprove: (Boolean) -> Unit,
+    riskyToolsAutoApprove: Boolean,
+    onChangeRiskyToolsAutoApprove: (Boolean) -> Unit,
     mcpServers: ImmutableList<McpServerUiState>,
     onAddMcpServer: (String, String, Map<String, String>) -> Unit,
     onRemoveMcpServer: (String) -> Unit,
@@ -132,9 +132,9 @@ internal fun ToolsContent(
 
         Spacer(Modifier.height(16.dp))
 
-        ShellApprovalCard(
-            autoApprove = shellAutoApprove,
-            onChange = onChangeShellAutoApprove,
+        RiskyApprovalCard(
+            autoApprove = riskyToolsAutoApprove,
+            onChange = onChangeRiskyToolsAutoApprove,
         )
 
         Spacer(Modifier.height(16.dp))
@@ -230,7 +230,7 @@ private fun ToolStepLimitCard(
 }
 
 @Composable
-private fun ShellApprovalCard(
+private fun RiskyApprovalCard(
     autoApprove: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
@@ -245,25 +245,25 @@ private fun ShellApprovalCard(
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
-                text = "Shell commands",
+                text = "Risky tools",
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                text = "Sandbox and terminal commands. Auto-approve skips the confirmation dialog in chat; scheduled tasks and heartbeats still never run shell unattended.",
+                text = "Shell commands, emails and installs. Auto-approve skips the confirmation dialog in chat; scheduled tasks and heartbeats still never run risky tools unattended.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            ShellApprovalOption(
+            RiskyApprovalOption(
                 title = "Ask every time",
-                detail = "Show a confirmation dialog before each command",
+                detail = "Show a confirmation dialog before each risky action",
                 selected = !autoApprove,
                 onSelect = { onChange(false) },
             )
-            ShellApprovalOption(
+            RiskyApprovalOption(
                 title = "Always allow",
-                detail = "Run shell commands without asking",
+                detail = "Run risky tools without asking",
                 selected = autoApprove,
                 onSelect = { onChange(true) },
             )
@@ -272,7 +272,7 @@ private fun ShellApprovalCard(
 }
 
 @Composable
-private fun ShellApprovalOption(
+private fun RiskyApprovalOption(
     title: String,
     detail: String,
     selected: Boolean,

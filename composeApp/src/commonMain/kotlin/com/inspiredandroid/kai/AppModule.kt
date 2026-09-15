@@ -76,7 +76,7 @@ val appModule = module {
     single<ToolExecutor> {
         ToolExecutor(
             approvalGate = get(),
-            isShellAutoApproved = { get<AppSettings>().isShellAutoApprove() },
+            isRiskyToolsAutoApproved = { get<AppSettings>().isRiskyToolsAutoApprove() },
         )
     }
     single<MemoryStore> {

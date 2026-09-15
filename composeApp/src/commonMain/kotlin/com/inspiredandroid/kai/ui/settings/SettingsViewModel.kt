@@ -82,7 +82,7 @@ class SettingsViewModel(
         availableServicesToAdd = computeAvailableServices().toImmutableList(),
         tools = dataRepository.getToolDefinitions().toImmutableList(),
         maxToolSteps = dataRepository.getMaxToolSteps(),
-        shellAutoApprove = dataRepository.isShellAutoApprove(),
+        riskyToolsAutoApprove = dataRepository.isRiskyToolsAutoApprove(),
         soulText = dataRepository.getSoulText(),
         learnedSoulEntries = dataRepository.getLearnedSoulEntries().toImmutableList(),
         isDynamicUiEnabled = dataRepository.isDynamicUiEnabled(),
@@ -171,7 +171,7 @@ class SettingsViewModel(
         onChangeCustomModelId = ::onChangeCustomModelId,
         onToggleTool = ::onToggleTool,
         onChangeMaxToolSteps = ::onChangeMaxToolSteps,
-        onChangeShellAutoApprove = ::onChangeShellAutoApprove,
+        onChangeRiskyToolsAutoApprove = ::onChangeRiskyToolsAutoApprove,
         onSaveSoul = ::onSaveSoul,
         onDeleteLearnedSoul = ::onDeleteLearnedSoul,
         onToggleDynamicUi = ::onToggleDynamicUi,
@@ -1004,9 +1004,9 @@ class SettingsViewModel(
         _state.update { it.copy(maxToolSteps = dataRepository.getMaxToolSteps()) }
     }
 
-    private fun onChangeShellAutoApprove(autoApprove: Boolean) {
-        dataRepository.setShellAutoApprove(autoApprove)
-        _state.update { it.copy(shellAutoApprove = dataRepository.isShellAutoApprove()) }
+    private fun onChangeRiskyToolsAutoApprove(autoApprove: Boolean) {
+        dataRepository.setRiskyToolsAutoApprove(autoApprove)
+        _state.update { it.copy(riskyToolsAutoApprove = dataRepository.isRiskyToolsAutoApprove()) }
     }
 
     // MCP server management

@@ -235,7 +235,7 @@ class ToolExecutorTest {
     }
 
     @Test
-    fun `shell auto-approve runs without a dialog`() = runTest {
+    fun `risky auto-approve runs shell without a dialog`() = runTest {
         var executed = false
         val tool =
             FakeTool(name = "execute_shell_command") {
@@ -247,7 +247,7 @@ class ToolExecutorTest {
             ToolExecutor(
                 toolsProvider = { listOf(tool) },
                 approvalGate = gate,
-                isShellAutoApproved = { true },
+                isRiskyToolsAutoApproved = { true },
             )
 
         val result = executor.executeTool("execute_shell_command", "{}", interactive = true)
@@ -258,7 +258,7 @@ class ToolExecutorTest {
     }
 
     @Test
-    fun `shell auto-approve still fails closed when unattended`() = runTest {
+    fun `risky auto-approve still fails closed when unattended`() = runTest {
         var executed = false
         val tool =
             FakeTool(name = "execute_shell_command") {
@@ -270,7 +270,7 @@ class ToolExecutorTest {
             ToolExecutor(
                 toolsProvider = { listOf(tool) },
                 approvalGate = gate,
-                isShellAutoApproved = { true },
+                isRiskyToolsAutoApproved = { true },
             )
 
         val result = executor.executeTool("execute_shell_command", "{}", interactive = false)
@@ -280,7 +280,7 @@ class ToolExecutorTest {
     }
 
     @Test
-    fun `shell auto-approve does not cover mail and installs`() = runTest {
+    fun `risky auto-approve covers mail and installs`() = runTest {
         var executed = false
         val tool =
             FakeTool(name = "compose_email") {
@@ -292,7 +292,30 @@ class ToolExecutorTest {
             ToolExecutor(
                 toolsProvider = { listOf(tool) },
                 approvalGate = gate,
-                isShellAutoApproved = { true },
+                isRiskyToolsAutoApproved = { true },
+            )
+
+        val result = executor.executeTool("compose_email", "{}", interactive = true)
+
+        assertTrue(executed)
+        assertTrue(result.contains("sent"))
+        assertTrue(gate.pending.value == null, "no dialog should be raised when auto-approved")
+    }
+
+    @Test
+    fun `mail still asks when auto-approve is off`() = runTest {
+        var executed = false
+        val tool =
+            FakeTool(name = "compose_email") {
+                executed = true
+                "sent"
+            }
+        val gate = ToolApprovalGate()
+        val executor =
+            ToolExecutor(
+                toolsProvider = { listOf(tool) },
+                approvalGate = gate,
+                isRiskyToolsAutoApproved = { false },
             )
         var result: String? = null
 
@@ -304,7 +327,7 @@ class ToolExecutorTest {
             if (gate.pending.value != null) break
             testScheduler.advanceTimeBy(50)
         }
-        gate.deny(gate.pending.value?.request?.id ?: error("mail must still ask"))
+        gate.deny(gate.pending.value?.request?.id ?: error("mail must ask when auto-approve is off"))
         job.join()
 
         assertFalse(executed)
