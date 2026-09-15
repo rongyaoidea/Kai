@@ -378,6 +378,14 @@ class FakeDataRepository : DataRepository {
         storedMaxToolSteps = steps
     }
 
+    var storedShellAutoApprove: Boolean = false
+
+    override fun isShellAutoApprove(): Boolean = storedShellAutoApprove
+
+    override fun setShellAutoApprove(autoApprove: Boolean) {
+        storedShellAutoApprove = autoApprove
+    }
+
     // MCP servers
     private val mcpServers = mutableListOf<McpServerConfig>()
     private val mcpConnected = mutableSetOf<String>()

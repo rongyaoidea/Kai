@@ -70,6 +70,7 @@ data class SettingsUiState(
     val availableServicesToAdd: ImmutableList<Service> = persistentListOf(),
     val tools: ImmutableList<ToolInfo> = persistentListOf(),
     val maxToolSteps: Int = AppSettings.DEFAULT_MAX_TOOL_STEPS,
+    val shellAutoApprove: Boolean = false,
     val soulText: String = "",
     val learnedSoulEntries: ImmutableList<LearnedSoulEntry> = persistentListOf(),
     val isDynamicUiEnabled: Boolean = true,

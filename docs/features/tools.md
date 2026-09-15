@@ -274,6 +274,10 @@ Tool availability is controlled at multiple levels:
 
 The platform layer assembles the final list of available tools by checking all gates and per-tool settings, and only enabled tools are sent to the AI provider.
 
+### Approval gate
+
+Tools that act outside the conversation — shell commands, outgoing mail, MCP/skill installs — pause the tool loop with a confirmation dialog showing the exact arguments, and fail closed on dismiss, timeout, or background runs. Shell commands (`execute_shell_command`, `privileged_shell`) additionally offer a two-way choice in Settings → Tools: **Ask every time** (default) or **Always allow**. Auto-allow skips the dialog in interactive chat only; scheduled tasks and heartbeats still never run shell unattended, and mail/installs always ask.
+
 ## Settings UI
 
 The tools tab in settings displays a responsive grid of toggle cards:

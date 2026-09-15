@@ -233,4 +233,75 @@ class ToolExecutorTest {
         assertTrue(result.contains("12:00"))
         assertTrue(gate.pending.value == null)
     }
+
+    @Test
+    fun `shell auto-approve runs without a dialog`() = runTest {
+        var executed = false
+        val tool =
+            FakeTool(name = "execute_shell_command") {
+                executed = true
+                "ran"
+            }
+        val gate = ToolApprovalGate()
+        val executor =
+            ToolExecutor(
+                toolsProvider = { listOf(tool) },
+                approvalGate = gate,
+                isShellAutoApproved = { true },
+            )
+
+        val result = executor.executeTool("execute_shell_command", "{}", interactive = true)
+
+        assertTrue(executed)
+        assertTrue(result.contains("ran"))
+        assertTrue(gate.pending.value == null, "no dialog should be raised when auto-approved")
+    }
+
+    @Test
+    fun `shell auto-approve still fails closed when unattended`() = runTest {
+        var executed = false
+        val tool =
+            FakeTool(name = "execute_shell_command") {
+                executed = true
+                "ran"
+            }
+        val gate = ToolApprovalGate()
+        val executor =
+            ToolExecutor(
+                toolsProvider = { listOf(tool) },
+                approvalGate = gate,
+                isShellAutoApproved = { true },
+            )
+
+        val result = executor.executeTool("execute_shell_command", "{}", interactive = false)
+
+        assertFalse(executed, "background runs must never run shell unattended")
+        assertTrue(result.contains("needs the user's approval"), "got: $result")
+    }
+
+    @Test
+    fun `shell auto-approve does not cover mail and installs`() = runTest {
+        var executed = false
+        val tool =
+            FakeTool(name = "compose_email") {
+                executed = true
+                "sent"
+            }
+        val gate = ToolApprovalGate()
+        val executor =
+            ToolExecutor(
+                toolsProvider = { listOf(tool) },
+                approvalGate = gate,
+                isShellAutoApproved = { true },
+            )
+        var result: String? = null
+
+        val job = launch { result = executor.executeTool("compose_email", "{}", interactive = true) }
+        runCurrent()
+        gate.deny(gate.pending.value?.request?.id ?: error("mail must still ask"))
+        job.join()
+
+        assertFalse(executed)
+        assertTrue(result?.contains("denied") == true, "got: $result")
+    }
 }

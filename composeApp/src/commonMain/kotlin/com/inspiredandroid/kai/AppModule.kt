@@ -74,7 +74,10 @@ val appModule = module {
     // dialog in the app root renders `pending` and answers through approve/deny.
     single { ToolApprovalGate() }
     single<ToolExecutor> {
-        ToolExecutor(approvalGate = get())
+        ToolExecutor(
+            approvalGate = get(),
+            isShellAutoApproved = { get<AppSettings>().isShellAutoApprove() },
+        )
     }
     single<MemoryStore> {
         MemoryStore(get())

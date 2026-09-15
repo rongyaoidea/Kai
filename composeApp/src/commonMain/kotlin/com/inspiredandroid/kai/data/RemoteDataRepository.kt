@@ -1967,6 +1967,12 @@ class RemoteDataRepository(
         appSettings.setMaxToolSteps(steps)
     }
 
+    override fun isShellAutoApprove(): Boolean = appSettings.isShellAutoApprove()
+
+    override fun setShellAutoApprove(autoApprove: Boolean) {
+        appSettings.setShellAutoApprove(autoApprove)
+    }
+
     // MCP servers
     override fun getMcpServers(): List<McpServerConfig> = mcpServerManager.getServers()
 

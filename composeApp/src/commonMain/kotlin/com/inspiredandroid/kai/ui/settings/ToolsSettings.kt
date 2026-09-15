@@ -1,6 +1,7 @@
 package com.inspiredandroid.kai.ui.settings
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -22,6 +24,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.inspiredandroid.kai.data.AppSettings
 import com.inspiredandroid.kai.mcp.PopularMcpServer
@@ -47,6 +50,8 @@ internal fun ToolsContent(
     onToggleTool: (String, Boolean) -> Unit,
     maxToolSteps: Int,
     onChangeMaxToolSteps: (Int) -> Unit,
+    shellAutoApprove: Boolean,
+    onChangeShellAutoApprove: (Boolean) -> Unit,
     mcpServers: ImmutableList<McpServerUiState>,
     onAddMcpServer: (String, String, Map<String, String>) -> Unit,
     onRemoveMcpServer: (String) -> Unit,
@@ -123,6 +128,13 @@ internal fun ToolsContent(
         ToolStepLimitCard(
             maxToolSteps = maxToolSteps,
             onChange = onChangeMaxToolSteps,
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        ShellApprovalCard(
+            autoApprove = shellAutoApprove,
+            onChange = onChangeShellAutoApprove,
         )
 
         Spacer(Modifier.height(16.dp))
@@ -212,6 +224,78 @@ private fun ToolStepLimitCard(
                 valueRange = AppSettings.MIN_TOOL_STEPS.toFloat()..AppSettings.MAX_TOOL_STEPS.toFloat(),
                 steps = (AppSettings.MAX_TOOL_STEPS - AppSettings.MIN_TOOL_STEPS) / 5 - 1,
                 modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShellApprovalCard(
+    autoApprove: Boolean,
+    onChange: (Boolean) -> Unit,
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = kaiAdaptiveCardColors(),
+        border = kaiAdaptiveCardBorder(),
+    ) {
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Text(
+                text = stringResource(Res.string.settings_tools_shell_approval_title),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = stringResource(Res.string.settings_tools_shell_approval_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            ShellApprovalOption(
+                title = stringResource(Res.string.settings_tools_shell_approval_ask),
+                detail = stringResource(Res.string.settings_tools_shell_approval_ask_detail),
+                selected = !autoApprove,
+                onSelect = { onChange(false) },
+            )
+            ShellApprovalOption(
+                title = stringResource(Res.string.settings_tools_shell_approval_always),
+                detail = stringResource(Res.string.settings_tools_shell_approval_always_detail),
+                selected = autoApprove,
+                onSelect = { onChange(true) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ShellApprovalOption(
+    title: String,
+    detail: String,
+    selected: Boolean,
+    onSelect: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .selectable(
+                selected = selected,
+                role = Role.RadioButton,
+                onClick = onSelect,
+            )
+            .handCursor(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = null)
+        Column(Modifier.weight(1f)) {
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onBackground,
+            )
+            Text(
+                text = detail,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
     }

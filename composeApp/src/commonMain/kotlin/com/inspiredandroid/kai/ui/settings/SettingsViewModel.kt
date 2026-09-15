@@ -82,6 +82,7 @@ class SettingsViewModel(
         availableServicesToAdd = computeAvailableServices().toImmutableList(),
         tools = dataRepository.getToolDefinitions().toImmutableList(),
         maxToolSteps = dataRepository.getMaxToolSteps(),
+        shellAutoApprove = dataRepository.isShellAutoApprove(),
         soulText = dataRepository.getSoulText(),
         learnedSoulEntries = dataRepository.getLearnedSoulEntries().toImmutableList(),
         isDynamicUiEnabled = dataRepository.isDynamicUiEnabled(),
@@ -170,6 +171,7 @@ class SettingsViewModel(
         onChangeCustomModelId = ::onChangeCustomModelId,
         onToggleTool = ::onToggleTool,
         onChangeMaxToolSteps = ::onChangeMaxToolSteps,
+        onChangeShellAutoApprove = ::onChangeShellAutoApprove,
         onSaveSoul = ::onSaveSoul,
         onDeleteLearnedSoul = ::onDeleteLearnedSoul,
         onToggleDynamicUi = ::onToggleDynamicUi,
@@ -1000,6 +1002,11 @@ class SettingsViewModel(
     private fun onChangeMaxToolSteps(steps: Int) {
         dataRepository.setMaxToolSteps(steps)
         _state.update { it.copy(maxToolSteps = dataRepository.getMaxToolSteps()) }
+    }
+
+    private fun onChangeShellAutoApprove(autoApprove: Boolean) {
+        dataRepository.setShellAutoApprove(autoApprove)
+        _state.update { it.copy(shellAutoApprove = dataRepository.isShellAutoApprove()) }
     }
 
     // MCP server management

@@ -280,6 +280,8 @@ fun SettingsScreenContent(
                                     onToggleTool = actions.onToggleTool,
                                     maxToolSteps = filteredUiState.maxToolSteps,
                                     onChangeMaxToolSteps = actions.onChangeMaxToolSteps,
+                                    shellAutoApprove = filteredUiState.shellAutoApprove,
+                                    onChangeShellAutoApprove = actions.onChangeShellAutoApprove,
                                     mcpServers = filteredUiState.mcpServers,
                                     onAddMcpServer = actions.onAddMcpServer,
                                     onRemoveMcpServer = actions.onRemoveMcpServer,
