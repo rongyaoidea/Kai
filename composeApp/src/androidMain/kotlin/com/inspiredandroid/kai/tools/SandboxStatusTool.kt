@@ -32,8 +32,16 @@ object SandboxStatusTool {
             val appSettings: AppSettings by inject(AppSettings::class.java)
             val state = sandboxManager.state.value
             val isReady = state is SandboxState.Ready
-            val nativeAvailable = try { sandboxManager.isNativeShellAvailable() } catch (_: Throwable) { false }
-            val sandboxEnabled = try { appSettings.isSandboxEnabled() } catch (_: Throwable) { true }
+            val nativeAvailable = try {
+                sandboxManager.isNativeShellAvailable()
+            } catch (_: Throwable) {
+                false
+            }
+            val sandboxEnabled = try {
+                appSettings.isSandboxEnabled()
+            } catch (_: Throwable) {
+                true
+            }
 
             val (stateName, stateDetail) = when (state) {
                 is SandboxState.NotInstalled -> "NotInstalled" to null
@@ -51,10 +59,30 @@ object SandboxStatusTool {
             }
 
             val canExecuteShell = isReady || nativeAvailable
-            val home = if (isReady) "/root" else try { sandboxManager.nativeHome.absolutePath } catch (_: Throwable) { "" }
-            val distroName = try { sandboxManager.distro.displayName } catch (_: Throwable) { null }
-            val distroId = try { sandboxManager.distro.id } catch (_: Throwable) { null }
-            val webViewAvailable = try { WebViewPageRenderer.isAvailable() } catch (_: Throwable) { false }
+            val home = if (isReady) {
+                "/root"
+            } else {
+                try {
+                    sandboxManager.nativeHome.absolutePath
+                } catch (_: Throwable) {
+                    ""
+                }
+            }
+            val distroName = try {
+                sandboxManager.distro.displayName
+            } catch (_: Throwable) {
+                null
+            }
+            val distroId = try {
+                sandboxManager.distro.id
+            } catch (_: Throwable) {
+                null
+            }
+            val webViewAvailable = try {
+                WebViewPageRenderer.isAvailable()
+            } catch (_: Throwable) {
+                false
+            }
 
             // Hint for the agent: what it can actually do right now
             val hint = when {
@@ -73,7 +101,11 @@ object SandboxStatusTool {
                 "can_execute_shell" to canExecuteShell,
                 "active_tier" to tier,
                 "home" to home,
-                "native_home" to try { sandboxManager.nativeHome.absolutePath } catch (_: Throwable) { "" },
+                "native_home" to try {
+                    sandboxManager.nativeHome.absolutePath
+                } catch (_: Throwable) {
+                    ""
+                },
                 "distro_name" to distroName,
                 "distro_id" to distroId,
                 "webview_available" to webViewAvailable,
