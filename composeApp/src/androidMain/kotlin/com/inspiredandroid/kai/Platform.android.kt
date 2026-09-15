@@ -42,6 +42,7 @@ import com.inspiredandroid.kai.tools.OpenFileTool
 import com.inspiredandroid.kai.tools.PermissionController
 import com.inspiredandroid.kai.tools.ProcessManagerTool
 import com.inspiredandroid.kai.tools.SandboxFileTools
+import com.inspiredandroid.kai.tools.SandboxStatusTool
 import com.inspiredandroid.kai.tools.SendNotificationTool
 import com.inspiredandroid.kai.tools.SetAlarmTool
 import com.inspiredandroid.kai.tools.ShellCommandTool
@@ -257,6 +258,7 @@ actual fun getPlatformToolDefinitions(): List<ToolInfo> = CommonTools.commonTool
         ShellCommandTool.toolInfo,
         ProcessManagerTool.toolInfo,
         SshConfigureHostTool.toolInfo,
+        SandboxStatusTool.toolInfo,
         BrowsePageTool.toolInfo,
         UiAutomationTools.uiDumpToolInfo,
         UiAutomationTools.uiScreenshotToolInfo,
@@ -308,6 +310,12 @@ actual fun getAvailableTools(): List<Tool> {
         if (appSettings.isToolEnabled(ConversationTools.searchConversationsToolInfo.id)) {
             val conversationStorage: ConversationStorage by inject(ConversationStorage::class.java)
             add(ConversationTools.searchConversationsTool(conversationStorage))
+        }
+
+        // Sandbox introspection is always available — even when the sandbox
+        // is disabled it tells the agent which tier is active.
+        if (appSettings.isToolEnabled(SandboxStatusTool.ID)) {
+            add(SandboxStatusTool.tool)
         }
 
         if (appSettings.isSandboxEnabled()) {

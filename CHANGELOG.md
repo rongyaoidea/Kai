@@ -1,3 +1,8 @@
+## v3.6.1 — 2026-09-15
+
+### Features
+- `get_sandbox_status` tool: explicit no-arg check for the Linux sandbox (proot Ready vs native mksh/toybox tier) — returns enabled/state/is_ready/native_available/active_tier/home/distro/webview_available so the agent can branch without probing files or parsing tool descriptions
+
 ## v3.6.0 — 2026-09-15
 
 ### Features
