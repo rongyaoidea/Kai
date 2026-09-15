@@ -182,7 +182,8 @@ actual fun getAvailableTools(): List<Tool> {
         emailStore = emailStore,
     ) {
         // manage_process rides the shell switch — it only inspects processes that tool started.
-        if (appSettings.isToolEnabled(ShellCommandTool.schema.name, defaultEnabled = false)) {
+        // Enabled by default per product decision (2026-09-14): host shell on desktop.
+        if (appSettings.isToolEnabled(ShellCommandTool.schema.name)) {
             add(ShellCommandTool)
             add(ProcessManagerTool)
         }

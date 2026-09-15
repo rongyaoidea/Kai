@@ -1,6 +1,6 @@
 # Notifications
 
-**Last verified:** 2026-08-08
+**Last verified:** 2026-09-15
 
 > Reading notifications is **FOSS-only** and **Android-only**. The Play Store variant of Kai does not declare `BIND_NOTIFICATION_LISTENER_SERVICE` and the feature is invisible there — no settings, no tools, no code path. Play Store's notification-access policies restrict the listener to a narrow set of approved use cases (accessibility, smartwatches, replacement notification UIs), which Kai is not.
 

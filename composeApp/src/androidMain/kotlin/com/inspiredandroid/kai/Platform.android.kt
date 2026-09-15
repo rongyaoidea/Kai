@@ -333,10 +333,10 @@ actual fun getAvailableTools(): List<Tool> {
         // Headless page rendering needs no sandbox — only a System WebView,
         // which de-Googled ROMs may lack. Re-checked per call too, so a
         // WebView update mid-chat fails with a hint instead of acting.
-        if (WebViewPageRenderer.isAvailable() && appSettings.isToolEnabled(BrowsePageTool.schema.name, false)) {
+        if (WebViewPageRenderer.isAvailable() && appSettings.isToolEnabled(BrowsePageTool.schema.name)) {
             add(BrowsePageTool)
         }
-        if (WebViewPageRenderer.isAvailable() && appSettings.isToolEnabled(WebActTools.webActTool.schema.name, false)) {
+        if (WebViewPageRenderer.isAvailable() && appSettings.isToolEnabled(WebActTools.webActTool.schema.name)) {
             add(WebActTools.webActTool)
         }
 
@@ -356,30 +356,30 @@ actual fun getAvailableTools(): List<Tool> {
                 shizukuState != ShizukuController.State.NOT_INSTALLED &&
                 shizukuState != ShizukuController.State.NOT_RUNNING
             if (automation.isServiceEnabled() || shizukuUsable) {
-                if (appSettings.isToolEnabled(UiAutomationTools.uiDumpTool.schema.name, false)) {
+                if (appSettings.isToolEnabled(UiAutomationTools.uiDumpTool.schema.name)) {
                     add(UiAutomationTools.uiDumpTool)
                 }
-                if (appSettings.isToolEnabled(UiAutomationTools.uiScreenshotTool.schema.name, false)) {
+                if (appSettings.isToolEnabled(UiAutomationTools.uiScreenshotTool.schema.name)) {
                     add(UiAutomationTools.uiScreenshotTool)
                 }
-                if (appSettings.isToolEnabled(UiAutomationTools.uiEventsTool.schema.name, false)) {
+                if (appSettings.isToolEnabled(UiAutomationTools.uiEventsTool.schema.name)) {
                     add(UiAutomationTools.uiEventsTool)
                 }
                 if (appSettings.isToolEnabled(UiAutomationTools.appCardTool.schema.name, true)) {
                     add(UiAutomationTools.appCardTool)
                 }
                 if (appSettings.isAutomationWriteEnabled()) {
-                    if (appSettings.isToolEnabled(UiAutomationTools.uiActTool.schema.name, false)) {
+                    if (appSettings.isToolEnabled(UiAutomationTools.uiActTool.schema.name)) {
                         add(UiAutomationTools.uiActTool)
                     }
-                    if (appSettings.isToolEnabled(UiAutomationTools.appLaunchTool.schema.name, false)) {
+                    if (appSettings.isToolEnabled(UiAutomationTools.appLaunchTool.schema.name)) {
                         add(UiAutomationTools.appLaunchTool)
                     }
                     if (shizukuUsable) {
-                        if (appSettings.isToolEnabled(UiAutomationTools.privilegedShellTool.schema.name, false)) {
+                        if (appSettings.isToolEnabled(UiAutomationTools.privilegedShellTool.schema.name)) {
                             add(UiAutomationTools.privilegedShellTool)
                         }
-                        if (appSettings.isToolEnabled(UiAutomationTools.privilegedInputTool.schema.name, false)) {
+                        if (appSettings.isToolEnabled(UiAutomationTools.privilegedInputTool.schema.name)) {
                             add(UiAutomationTools.privilegedInputTool)
                         }
                     }

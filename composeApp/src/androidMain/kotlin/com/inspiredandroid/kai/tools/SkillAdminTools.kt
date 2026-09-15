@@ -34,9 +34,10 @@ object SkillAdminTools {
         return buildList {
             if (appSettings.isToolEnabled("list_skills")) add(listSkillsTool)
             // A skill is instruction text the agent then follows, fetched from a host the
-            // model picks — opt-in, not on by default.
-            if (appSettings.isToolEnabled("install_skill", defaultEnabled = false)) add(installSkillTool)
-            if (appSettings.isToolEnabled("uninstall_skill", defaultEnabled = false)) add(uninstallSkillTool)
+            // model picks. Enabled by default per product decision (2026-09-14); the
+            // approval gate still asks before each install/remove at runtime.
+            if (appSettings.isToolEnabled("install_skill")) add(installSkillTool)
+            if (appSettings.isToolEnabled("uninstall_skill")) add(uninstallSkillTool)
         }
     }
 

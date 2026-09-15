@@ -463,7 +463,7 @@ class AppSettings(internal val settings: Settings) {
 
     // SMS (FOSS-only, Android-only — settings layer is platform-agnostic, feature gate
     // is enforced by the READ_SMS permission being declared only in foss/AndroidManifest.xml)
-    fun isSmsEnabled(): Boolean = settings.getBoolean(KEY_SMS_ENABLED, false)
+    fun isSmsEnabled(): Boolean = settings.getBoolean(KEY_SMS_ENABLED, true)
 
     fun setSmsEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_SMS_ENABLED, enabled)
@@ -501,7 +501,7 @@ class AppSettings(internal val settings: Settings) {
 
     // Notifications (FOSS-only, Android-only — settings layer is platform-agnostic, feature
     // gate is enforced by the listener service being declared only in foss/AndroidManifest.xml)
-    fun isNotificationsEnabled(): Boolean = settings.getBoolean(KEY_NOTIFICATIONS_ENABLED, false)
+    fun isNotificationsEnabled(): Boolean = settings.getBoolean(KEY_NOTIFICATIONS_ENABLED, true)
 
     fun setNotificationsEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_NOTIFICATIONS_ENABLED, enabled)
@@ -536,13 +536,13 @@ class AppSettings(internal val settings: Settings) {
     // every automation tool; the write switch additionally gates tap/input/scroll
     // and app launches. The allowlist is a comma-separated set of package names —
     // empty means "any app except the sensitive blocklist".
-    fun isAutomationEnabled(): Boolean = settings.getBoolean(KEY_AUTOMATION_ENABLED, false)
+    fun isAutomationEnabled(): Boolean = settings.getBoolean(KEY_AUTOMATION_ENABLED, true)
 
     fun setAutomationEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_AUTOMATION_ENABLED, enabled)
     }
 
-    fun isAutomationWriteEnabled(): Boolean = settings.getBoolean(KEY_AUTOMATION_WRITE_ENABLED, false)
+    fun isAutomationWriteEnabled(): Boolean = settings.getBoolean(KEY_AUTOMATION_WRITE_ENABLED, true)
 
     fun setAutomationWriteEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_AUTOMATION_WRITE_ENABLED, enabled)
@@ -558,7 +558,7 @@ class AppSettings(internal val settings: Settings) {
         settings.putString(KEY_AUTOMATION_ALLOWED_APPS, packages.joinToString(","))
     }
 
-    fun isShizukuEnabled(): Boolean = settings.getBoolean(KEY_SHIZUKU_ENABLED, false)
+    fun isShizukuEnabled(): Boolean = settings.getBoolean(KEY_SHIZUKU_ENABLED, true)
 
     fun setShizukuEnabled(enabled: Boolean) {
         settings.putBoolean(KEY_SHIZUKU_ENABLED, enabled)

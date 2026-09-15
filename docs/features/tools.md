@@ -1,6 +1,6 @@
 # Tools
 
-**Last verified:** 2026-09-14
+**Last verified:** 2026-09-15
 
 Kai's tools feature allows the AI to execute external functions during conversations — web search, notifications, calendar events, shell commands, memory operations, and more. Tools are defined with a schema, executed with safety guards, and managed through per-tool toggles in settings.
 
@@ -264,9 +264,9 @@ Tool availability is controlled at multiple levels:
 - **Feature-level gates** — memory tools require memory enabled, scheduling/heartbeat tools require scheduling enabled, email tools require email enabled
 - **Sandbox install gate (Android)** — `ssh_configure_host`, `read_file`, and `write_file` are surfaced only when the Linux sandbox is actually installed (Ready) *and* the sandbox toggle is on. `execute_shell_command` and `manage_process` are tiered instead of gated: full proot Linux when Ready, host mksh/toybox (no rootfs, no download) otherwise — same tool surface and session model, narrower capabilities. Skills still require Ready (`~/skills/` lives in the sandbox).
 - **Per-tool toggles** — individual tools can be enabled or disabled in settings, persisted with a `tool_enabled_` key prefix
-- **Default state** — most tools default to enabled; `execute_shell_command` defaults to disabled
+- **Default state** — every tool defaults to enabled, including `execute_shell_command` (tiered: full sandbox shell when installed, host shell otherwise), the web tools, automation, and the agent-side MCP/skill installers. The runtime approval gate still asks before each risky call (privileged shell, installs, email sending), so defaults-on means fewer setup taps, not unattended execution. SMS sending stays default-off; everything else is on.
 - **Master-toggle-only** — memory, scheduling, heartbeat, email, SMS, and notification tools have no individual per-tool toggle; they are on whenever their master switch in Settings → Agent is on (heartbeat is bundled with the scheduling switch). The Android sandbox tools and desktop's `manage_process` are gated the same way — by the sandbox switch and the shell switch respectively — and likewise carry no switch of their own
-- **On-device (LiteRT) allowlist** — when the active model is an on-device LiteRT model, only a small allowlist of tools is exposed regardless of which other tools are enabled. The current allowlist is: `get_local_time`, `get_location_from_ip`, `web_search`, `open_url`, `memory_store`, `memory_forget`, `memory_reinforce`, and `execute_shell_command`. Memory tools beyond the three listed, email tools, scheduling tools, and heartbeat tools are not surfaced to local models even when their master switches are on.
+- **On-device (LiteRT) allowlist** — when the active model is an on-device LiteRT model, only a small allowlist of tools is exposed regardless of which other tools are enabled. The current allowlist is: `get_local_time`, `get_location_from_ip`, `web_search`, `open_url`, `fetch_url`, `memory_store`, `memory_forget`, `memory_reinforce`, `search_memories`, `todo`, `search_conversations`, and `execute_shell_command`. Memory tools beyond those listed, email tools, scheduling tools, and heartbeat tools are not surfaced to local models even when their master switches are on.
 
 The platform layer assembles the final list of available tools by checking all gates and per-tool settings, and only enabled tools are sent to the AI provider.
 

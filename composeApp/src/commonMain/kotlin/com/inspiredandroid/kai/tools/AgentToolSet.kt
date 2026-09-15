@@ -50,11 +50,12 @@ fun buildAgentToolSet(
         add(McpAdminTools.listServersTool(mcpServerManager))
     }
     // Installing or removing a server changes which tools and tool descriptions enter the
-    // prompt, so both default to off — a user opts in, a fetched web page cannot.
-    if (appSettings.isToolEnabled("add_mcp_server", defaultEnabled = false)) {
+    // prompt. Enabled by default per product decision (2026-09-14); the approval gate
+    // still asks before each install/remove at runtime.
+    if (appSettings.isToolEnabled("add_mcp_server")) {
         add(McpAdminTools.addServerTool(mcpServerManager))
     }
-    if (appSettings.isToolEnabled("remove_mcp_server", defaultEnabled = false)) {
+    if (appSettings.isToolEnabled("remove_mcp_server")) {
         add(McpAdminTools.removeServerTool(mcpServerManager))
     }
 

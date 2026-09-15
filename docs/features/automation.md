@@ -1,6 +1,6 @@
 # Cross-App Automation
 
-**Last verified:** 2026-09-12
+**Last verified:** 2026-09-15
 
 Kai can see and control other Android apps on the user's behalf: read what's on screen, tap buttons, fill forms, scroll lists, launch apps, and — once the Shizuku service is running — send raw key events and run ADB-level shell commands. Available on **Android only**; every other platform hides the feature completely.
 
@@ -19,7 +19,7 @@ A note on naming: Android's `UiAutomation` class itself is hidden from third-par
 
 ## Safety Model
 
-Everything is off by default behind three independent switches in Settings → Agent → Automation: the master switch, the control-actions switch, and the Shizuku switch. Each automation tool additionally keeps its own switch in the Tools tab, so turning a capability on is always a deliberate two-step act.
+All three switches in Settings → Agent → Automation default to on since 2026-09-15 (master, control-actions, Shizuku), and each automation tool additionally keeps its own switch in the Tools tab, default on as well. Tools are still only offered while their backing service is actually alive (bound accessibility service or running Shizuku), and the runtime approval gate asks before privileged actions — so defaults-on removes setup taps without removing consent.
 
 Two fences apply to every write, no matter which tool performs it:
 
