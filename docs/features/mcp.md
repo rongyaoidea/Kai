@@ -1,6 +1,6 @@
 # MCP Servers
 
-**Last verified:** 2026-09-12
+**Last verified:** 2026-09-15
 
 Kai supports external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). Users can connect to remote MCP servers using Streamable HTTP transport and use their tools alongside native tools.
 
@@ -17,6 +17,8 @@ A tool discovered from a connected MCP server. Wraps the server's tool definitio
 ### Popular Servers
 
 A curated list of verified free MCP endpoints. Displayed as quick-add shortcuts in the add server bottom sheet, split into **International** and **China** market tabs (Chinese-locale devices land on the China tab). Selection criteria: free, Streamable HTTP transport, practically useful, reasonably stable, static public URL. Most require no API key and one-tap add. Auth-optional servers (Jina AI, Caiyun Weather) prefill the form with an optional API key field under each host's own header (`Authorization: Bearer …` vs `X-Caiyun-API-Key`); the server can still be added without a key, but key-gated tools need a free key afterwards. Existing user-defined headers are never overwritten. The current names live in the runtime popular-server list in code; selection policy, last probe results, and a mirrored snapshot live in the knowledge bundle under `docs/knowledge/popular-mcp/`. Both are refreshed together with the `update-popular-mcp-servers` skill. Dead hosts (`remote.mcpservers.org` Fetch and Sequential Thinking) were removed earlier.
+
+Below the one-tap list, a Browse Marketplaces section links out to external MCP directories — Smithery, mcp.so, Glama and the official registry on the International tab; the ModelScope plaza, the Alibaba Bailian plaza and the Amap MCP docs on the China tab — following the same market tabs. Marketplace entries open in the system browser; users pick a server there and paste its Streamable HTTP URL into the add-server form above. Only remote servers can be added; stdio-only entries do not work, and expiring per-user URLs (such as temporary hosted domains) should not be expected to stay connected.
 
 ## Adding a Server
 
@@ -99,9 +101,9 @@ Tool calls to MCP servers go through the same execution pipeline as native tools
 | `composeApp/src/commonMain/.../mcp/McpTool.kt` | Wraps MCP tools as native Tool implementations |
 | `composeApp/src/commonMain/.../mcp/McpServerConfig.kt` | Server configuration data model |
 | `composeApp/src/commonMain/.../mcp/McpModels.kt` | JSON-RPC DTOs and MCP-specific models |
-| `composeApp/src/commonMain/.../mcp/PopularMcpServers.kt` | Curated list of verified MCP endpoints |
+| `composeApp/src/commonMain/.../mcp/PopularMcpServers.kt` | Curated list of verified MCP endpoints plus marketplace directory links |
 | `docs/knowledge/popular-mcp/` | OKF bundle: selection policy, last probe snapshot, refresh playbook |
-| `composeApp/src/commonMain/.../ui/settings/McpSection.kt` | MCP server card UI, add-server bottom sheet with multi-header editor |
+| `composeApp/src/commonMain/.../ui/settings/McpSection.kt` | MCP server card UI, add-server bottom sheet with multi-header editor, popular list and marketplace links |
 | `composeApp/src/commonMain/.../ui/settings/SettingsScreen.kt` | Hosts the MCP section inside the Tools tab content |
 | `composeApp/src/commonMain/.../ui/settings/SettingsViewModel.kt` | MCP connection management and UI state |
 | `composeApp/src/commonMain/.../ui/settings/SettingsUiState.kt` | McpServerUiState, McpConnectionStatus, McpAppDialogState |

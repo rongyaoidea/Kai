@@ -151,6 +151,64 @@ val popularMcpServers = listOf(
     ),
 )
 
+/** A browsable MCP directory. Display partition only — opens in the system browser
+ * so users can pick a server themselves and paste its Streamable HTTP URL back here. */
+@Immutable
+data class McpMarketplace(
+    val name: String,
+    val url: String,
+    val description: String,
+    val market: McpMarket = McpMarket.INTERNATIONAL,
+)
+
+/**
+ * Curated MCP marketplaces backing the "browse marketplaces" section of the
+ * Settings one-tap sheet. Only directories that list remote Streamable HTTP
+ * endpoints belong here — the app cannot use stdio servers. Per-user expiring
+ * hosts (e.g. ModelScope temporary domains) must not become one-tap entries,
+ * but linking the directory itself is fine since the user picks a stable URL.
+ */
+val mcpMarketplaces = listOf(
+    McpMarketplace(
+        name = "Smithery",
+        url = "https://smithery.ai/servers",
+        description = "21,000+ hosted MCPs with search and usage counts — pick remote (Streamable HTTP) servers",
+    ),
+    McpMarketplace(
+        name = "mcp.so",
+        url = "https://mcp.so/servers",
+        description = "Community directory with remote servers, clients and tags — copy a Streamable HTTP URL back here",
+    ),
+    McpMarketplace(
+        name = "Glama",
+        url = "https://glama.ai/mcp/servers",
+        description = "87,000+ server registry with quality ratings — filter for remote-capable entries",
+    ),
+    McpMarketplace(
+        name = "MCP Registry (Official)",
+        url = "https://registry.modelcontextprotocol.io/",
+        description = "Official registry — reference and vendor-maintained servers",
+    ),
+    McpMarketplace(
+        name = "ModelScope MCP广场",
+        url = "https://www.modelscope.cn/mcp",
+        description = "魔搭社区中文 MCP 广场 — 挑选 Streamable HTTP 远端，把稳定 URL 粘贴回来添加（24h 临时域名不可用）",
+        market = McpMarket.CHINA,
+    ),
+    McpMarketplace(
+        name = "阿里云百炼 MCP广场",
+        url = "https://bailian.console.aliyun.com/?api=displayDashboard&tab=mcp#/mcp-market",
+        description = "需登录阿里云控制台 — 挑选免费远端，复制 URL 回来添加",
+        market = McpMarket.CHINA,
+    ),
+    McpMarketplace(
+        name = "高德地图 MCP",
+        url = "https://lbs.amap.com/api/mcp-server/summary",
+        description = "官方位置/路线/天气文档 — 按文档创建 Key 后添加（地理编码、路径规划、专属地图）",
+        market = McpMarket.CHINA,
+    ),
+)
+
 /** Merge [defaults] into [existing], keeping any header key the user already set (case-insensitive). */
 internal fun mergeMissingHeaders(
     existing: Map<String, String>,

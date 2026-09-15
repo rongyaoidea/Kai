@@ -1,3 +1,8 @@
+## v3.6.0 — 2026-09-15
+
+### Features
+- Browse MCP marketplaces: the add-server sheet links out to external MCP directories (Smithery, mcp.so, Glama and the official registry internationally; ModelScope plaza, Alibaba Bailian plaza and Amap MCP docs in China) under the same International/China tabs — pick a server in the system browser and paste its Streamable HTTP URL back to add it
+
 ## v3.5.0 — 2026-09-15
 
 ### Features

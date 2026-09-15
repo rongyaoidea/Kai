@@ -44,12 +44,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.inspiredandroid.kai.mcp.McpMarket
 import com.inspiredandroid.kai.mcp.PopularMcpServer
 import com.inspiredandroid.kai.mcp.apiKeyHeaderValue
+import com.inspiredandroid.kai.mcp.mcpMarketplaces
 import com.inspiredandroid.kai.mcp.popularMcpServers
 import com.inspiredandroid.kai.ui.KaiOutlinedTextField
 import com.inspiredandroid.kai.ui.components.VerticalScrollbarForScroll
@@ -67,6 +69,8 @@ import kai.composeapp.generated.resources.settings_mcp_header_key
 import kai.composeapp.generated.resources.settings_mcp_header_value
 import kai.composeapp.generated.resources.settings_mcp_market_china
 import kai.composeapp.generated.resources.settings_mcp_market_international
+import kai.composeapp.generated.resources.settings_mcp_marketplaces
+import kai.composeapp.generated.resources.settings_mcp_marketplaces_hint
 import kai.composeapp.generated.resources.settings_mcp_no_tools
 import kai.composeapp.generated.resources.settings_mcp_popular_servers
 import kai.composeapp.generated.resources.settings_mcp_refresh
@@ -315,6 +319,7 @@ private fun AddMcpServerDialog(
     var marketTab by remember { mutableIntStateOf(if (Locale.current.language == "zh") 1 else 0) }
     val mcpScrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
 
     fun prefillPopularWithAuth(server: PopularMcpServer) {
         name = server.name
@@ -468,6 +473,12 @@ private fun AddMcpServerDialog(
                     }
                 }
 
+                val marketTabs = listOf(
+                    McpMarket.INTERNATIONAL to stringResource(Res.string.settings_mcp_market_international),
+                    McpMarket.CHINA to stringResource(Res.string.settings_mcp_market_china),
+                )
+                val selectedMarket = marketTabs[marketTab.coerceIn(marketTabs.indices)].first
+
                 if (popularMcpServers.isNotEmpty()) {
                     Spacer(Modifier.height(16.dp))
                     Text(
@@ -476,10 +487,6 @@ private fun AddMcpServerDialog(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(8.dp))
-                    val marketTabs = listOf(
-                        McpMarket.INTERNATIONAL to stringResource(Res.string.settings_mcp_market_international),
-                        McpMarket.CHINA to stringResource(Res.string.settings_mcp_market_china),
-                    )
                     TabRow(selectedTabIndex = marketTab.coerceIn(marketTabs.indices)) {
                         marketTabs.forEachIndexed { index, (_, title) ->
                             Tab(
@@ -490,8 +497,7 @@ private fun AddMcpServerDialog(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    val market = marketTabs[marketTab.coerceIn(marketTabs.indices)].first
-                    for (server in popularMcpServers.filter { it.market == market }) {
+                    for (server in popularMcpServers.filter { it.market == selectedMarket }) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -516,6 +522,48 @@ private fun AddMcpServerDialog(
                                 )
                                 Text(
                                     text = server.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                    }
+                }
+
+                if (mcpMarketplaces.isNotEmpty()) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        text = stringResource(Res.string.settings_mcp_marketplaces),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = stringResource(Res.string.settings_mcp_marketplaces_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    for (marketplace in mcpMarketplaces.filter { it.market == selectedMarket }) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(CardDefaults.shape)
+                                .clickable { uriHandler.openUri(marketplace.url) }
+                                .handCursor(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                            ),
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Text(
+                                    text = marketplace.name + " ↗",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    text = marketplace.description,
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )

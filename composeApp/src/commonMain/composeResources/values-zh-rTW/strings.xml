@@ -174,6 +174,8 @@
     <string name="settings_mcp_status_error">連線失敗</string>
     <string name="settings_mcp_no_tools">未發現工具</string>
     <string name="settings_mcp_popular_servers">熱門伺服器</string>
+    <string name="settings_mcp_marketplaces">逛廣場</string>
+    <string name="settings_mcp_marketplaces_hint">去廣場裡挑選伺服器，把它的 Streamable HTTP 位址貼到上面加入。只有遠端服務可用，本地 stdio 條目加不了。</string>
     <string name="settings_mcp_market_international">國際</string>
     <string name="settings_mcp_market_china">中國</string>
     <string name="settings_export_import_title">匯出 / 匯入</string>

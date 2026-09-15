@@ -279,6 +279,8 @@
     <string name="settings_mcp_status_error">Connection failed</string>
     <string name="settings_mcp_no_tools">No tools discovered</string>
     <string name="settings_mcp_popular_servers">Popular Servers</string>
+    <string name="settings_mcp_marketplaces">Browse Marketplaces</string>
+    <string name="settings_mcp_marketplaces_hint">Pick a server in a marketplace, then paste its Streamable HTTP URL above to add it. Only remote servers work — stdio entries can't be used.</string>
     <string name="settings_mcp_market_international">International</string>
     <string name="settings_mcp_market_china">China</string>
     <string name="settings_skills">Skills</string>

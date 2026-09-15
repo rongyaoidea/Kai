@@ -100,6 +100,16 @@ class PopularMcpServersTest {
     }
 
     @Test
+    fun `every marketplace sits in exactly one market and uses https`() {
+        assertTrue(mcpMarketplaces.isNotEmpty())
+        for (marketplace in mcpMarketplaces) {
+            assertTrue(marketplace.url.startsWith("https://"), marketplace.name)
+        }
+        assertTrue(mcpMarketplaces.any { it.market == McpMarket.CHINA })
+        assertTrue(mcpMarketplaces.any { it.market == McpMarket.INTERNATIONAL })
+    }
+
+    @Test
     fun `apiKeyHeaderValue honors scheme and raw keys`() {
         assertEquals("Bearer jina_abc", apiKeyHeaderValue("jina_abc", "Bearer "))
         assertEquals("Bearer jina_abc", apiKeyHeaderValue("  jina_abc  ", "Bearer "))
