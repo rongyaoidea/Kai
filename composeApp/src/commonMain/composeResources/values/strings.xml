@@ -577,10 +577,4 @@
     <string name="tool_calls_succeeded">%1$d succeeded</string>
     <string name="tool_calls_failed">%1$d failed</string>
     <string name="tool_calls_trivial">+ %1$d trivial</string>
-    <string name="settings_tools_shell_approval_title">Shell commands</string>
-    <string name="settings_tools_shell_approval_description">Sandbox and terminal commands. Auto-approve skips the confirmation dialog in chat; scheduled tasks and heartbeats still never run shell unattended.</string>
-    <string name="settings_tools_shell_approval_ask">Ask every time</string>
-    <string name="settings_tools_shell_approval_ask_detail">Show a confirmation dialog before each command</string>
-    <string name="settings_tools_shell_approval_always">Always allow</string>
-    <string name="settings_tools_shell_approval_always_detail">Run shell commands without asking</string>
 </resources>

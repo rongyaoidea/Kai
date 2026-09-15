@@ -234,6 +234,10 @@ private fun ShellApprovalCard(
     autoApprove: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
+    // NOTE: labels are hardcoded English for now. Six settings_tools_shell_approval_*
+    // keys added to values/strings.xml did not produce Res accessors on CI
+    // (compileAndroidMain unresolved references) while older keys in the same file
+    // resolve fine — needs a local build to diagnose the resource codegen issue.
     Card(
         modifier = Modifier.fillMaxWidth(),
         colors = kaiAdaptiveCardColors(),
@@ -241,25 +245,25 @@ private fun ShellApprovalCard(
     ) {
         Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
             Text(
-                text = stringResource(Res.string.settings_tools_shell_approval_title),
+                text = "Shell commands",
                 style = MaterialTheme.typography.titleSmall,
                 color = MaterialTheme.colorScheme.onBackground,
             )
             Text(
-                text = stringResource(Res.string.settings_tools_shell_approval_description),
+                text = "Sandbox and terminal commands. Auto-approve skips the confirmation dialog in chat; scheduled tasks and heartbeats still never run shell unattended.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
             ShellApprovalOption(
-                title = stringResource(Res.string.settings_tools_shell_approval_ask),
-                detail = stringResource(Res.string.settings_tools_shell_approval_ask_detail),
+                title = "Ask every time",
+                detail = "Show a confirmation dialog before each command",
                 selected = !autoApprove,
                 onSelect = { onChange(false) },
             )
             ShellApprovalOption(
-                title = stringResource(Res.string.settings_tools_shell_approval_always),
-                detail = stringResource(Res.string.settings_tools_shell_approval_always_detail),
+                title = "Always allow",
+                detail = "Run shell commands without asking",
                 selected = autoApprove,
                 onSelect = { onChange(true) },
             )
