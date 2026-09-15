@@ -1,3 +1,10 @@
+## v3.8.1 — 2026-09-15
+
+### Fixes
+- OpenCode Go strict gateway: drop `reasoning_content` echo and `cache_control` breakpoints on Go requests (gateway answers non-standard fields with 400 Extra inputs are not permitted)
+- Duplicate tool names: native tools shadow same-named MCP tools at assembly so strict providers (notably DeepSeek via Go, "tool name must be unique") receive unique function names
+- Approval display-name lookup can no longer break or stall the approval dialog (raw tool id fallback with timeout)
+
 ## v3.8.0 — 2026-09-15
 
 ### Features
