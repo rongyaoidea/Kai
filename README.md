@@ -191,6 +191,13 @@ Kai supports the [Model Context Protocol](https://modelcontextprotocol.io/) for 
 | Hugging Face | Search Hugging Face models, datasets, and repos |
 | Frankfurter FX | ECB currency reference rates and conversion |
 | AISENSE | Time, UUID, short links, temp storage, webhooks, disposable inbox, human approvals |
+| Steam Trends | Steam concurrent player trends per game |
+
+### China
+
+| Server | Description |
+|--------|-------------|
+| Caiyun Weather | China weather: realtime, hourly, weekly, history, alerts (free key) |
 
 All popular servers are free. Most require no API key (one-tap add); Jina AI can be added without a key, with an optional free API key from jina.ai for search tools. MCP servers auto-reconnect on app startup.
 

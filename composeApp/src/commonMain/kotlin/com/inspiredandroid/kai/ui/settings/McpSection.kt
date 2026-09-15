@@ -28,11 +28,14 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Switch
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,10 +44,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.intl.Locale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.inspiredandroid.kai.mcp.McpMarket
 import com.inspiredandroid.kai.mcp.PopularMcpServer
-import com.inspiredandroid.kai.mcp.authorizationHeaderValue
+import com.inspiredandroid.kai.mcp.apiKeyHeaderValue
 import com.inspiredandroid.kai.mcp.popularMcpServers
 import com.inspiredandroid.kai.ui.KaiOutlinedTextField
 import com.inspiredandroid.kai.ui.components.VerticalScrollbarForScroll
@@ -60,6 +65,8 @@ import kai.composeapp.generated.resources.settings_mcp_api_key
 import kai.composeapp.generated.resources.settings_mcp_api_key_help
 import kai.composeapp.generated.resources.settings_mcp_header_key
 import kai.composeapp.generated.resources.settings_mcp_header_value
+import kai.composeapp.generated.resources.settings_mcp_market_china
+import kai.composeapp.generated.resources.settings_mcp_market_international
 import kai.composeapp.generated.resources.settings_mcp_no_tools
 import kai.composeapp.generated.resources.settings_mcp_popular_servers
 import kai.composeapp.generated.resources.settings_mcp_refresh
@@ -300,6 +307,12 @@ private fun AddMcpServerDialog(
     // When a popular server needs auth (e.g. Jina), prefill the form and show an API key field.
     var requiresAuth by remember { mutableStateOf(false) }
     var apiKey by remember { mutableStateOf("") }
+    // The popular entry that triggered the auth prefill — owns the header name
+    // (Authorization vs X-Caiyun-API-Key) and the key scheme (Bearer vs raw).
+    var authServer by remember { mutableStateOf<PopularMcpServer?>(null) }
+    // Market tabs: Chinese-locale devices land on the China tab, everyone else
+    // on International. Tab order is fixed; only the initial selection varies.
+    var marketTab by remember { mutableIntStateOf(if (Locale.current.language == "zh") 1 else 0) }
     val mcpScrollState = rememberScrollState()
     val scope = rememberCoroutineScope()
 
@@ -307,9 +320,10 @@ private fun AddMcpServerDialog(
         name = server.name
         url = server.url
         requiresAuth = true
+        authServer = server
         apiKey = ""
         headers.clear()
-        headers.add(HeaderEntry(key = "Authorization", value = ""))
+        headers.add(HeaderEntry(key = server.apiKeyHeader, value = ""))
         scope.launch { mcpScrollState.animateScrollTo(0) }
     }
 
@@ -434,11 +448,13 @@ private fun AddMcpServerDialog(
                                     .filter { it.key.isNotBlank() && it.value.isNotBlank() }
                                     .forEach { put(it.key.trim(), it.value.trim()) }
                                 if (requiresAuth && apiKey.isNotBlank()) {
-                                    // Replace any Authorization row with the dedicated API key field.
-                                    keys.filter { it.equals("Authorization", ignoreCase = true) }
+                                    // Replace any key-header row with the dedicated API key field.
+                                    val headerName = authServer?.apiKeyHeader ?: "Authorization"
+                                    val scheme = authServer?.apiKeyScheme ?: "Bearer "
+                                    keys.filter { it.equals(headerName, ignoreCase = true) }
                                         .toList()
                                         .forEach { remove(it) }
-                                    put("Authorization", authorizationHeaderValue(apiKey))
+                                    put(headerName, apiKeyHeaderValue(apiKey, scheme))
                                 }
                             }
                             onAdd(name, url, headerMap)
@@ -460,7 +476,22 @@ private fun AddMcpServerDialog(
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Spacer(Modifier.height(8.dp))
-                    for (server in popularMcpServers) {
+                    val marketTabs = listOf(
+                        McpMarket.INTERNATIONAL to stringResource(Res.string.settings_mcp_market_international),
+                        McpMarket.CHINA to stringResource(Res.string.settings_mcp_market_china),
+                    )
+                    TabRow(selectedTabIndex = marketTab.coerceIn(marketTabs.indices)) {
+                        marketTabs.forEachIndexed { index, (_, title) ->
+                            Tab(
+                                selected = marketTab == index,
+                                onClick = { marketTab = index },
+                                text = { Text(title) },
+                            )
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    val market = marketTabs[marketTab.coerceIn(marketTabs.indices)].first
+                    for (server in popularMcpServers.filter { it.market == market }) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()

@@ -1,5 +1,13 @@
 # Popular MCP knowledge update log
 
+## 2026-09-15
+
+* **Update**: MCP market with China/International tabs (new `market` field on `PopularMcpServer`; Chinese-locale devices land on the China tab).
+  * **Added (2)** — Steam Trends (no key, 3 tools, international), Caiyun Weather (free key via `X-Caiyun-API-Key`, 5 tools, China; second `requiresAuth` host after Jina, first with a non-Bearer scheme).
+  * **CN research outcome** — Amap/Baidu Maps/Bocha/QWeather/Bilibili/NetEase/Eastmoney are stdio, per-user expiring URLs, or key-gated commercial with no static endpoint; none can one-tap. OctoTrip Flights skipped as a Kiwi.com duplicate.
+  * 18 → 20 hosts.
+* **Pending**: set `verified` in servers.md once desktopTest-PopularMcpServers goes green on CI.
+
 ## 2026-09-14
 
 * **Update**: Web research + live probe (initialize with 2026-07-28 → 2024-11-05 fallback like McpClient + `tools/list`, browser UA, retry-once on timeout/5xx).

@@ -279,6 +279,8 @@
     <string name="settings_mcp_status_error">Connection failed</string>
     <string name="settings_mcp_no_tools">No tools discovered</string>
     <string name="settings_mcp_popular_servers">Popular Servers</string>
+    <string name="settings_mcp_market_international">International</string>
+    <string name="settings_mcp_market_china">China</string>
     <string name="settings_skills">Skills</string>
     <string name="settings_skills_description">Reusable skills stored in the Linux sandbox. Trigger one in chat by starting your message with its slash command.</string>
     <string name="settings_skills_add">Add Skill</string>

@@ -17,7 +17,22 @@ data class PopularMcpServer(
      * instead of one-tap adding.
      */
     val requiresAuth: Boolean = false,
+    /**
+     * Which market tab lists this server. Display partition only — probe and
+     * selection rules are identical for both markets.
+     */
+    val market: McpMarket = McpMarket.INTERNATIONAL,
+    /**
+     * Header carrying the API key for [requiresAuth] servers, and the scheme
+     * prefixed to the raw key (`"Bearer "` for Authorization-style hosts, `""`
+     * for hosts like Caiyun that take the raw key in a custom header).
+     */
+    val apiKeyHeader: String = "Authorization",
+    val apiKeyScheme: String = "Bearer ",
 )
+
+/** Market partition of the one-tap list: global endpoints vs China-facing ones. */
+enum class McpMarket { INTERNATIONAL, CHINA }
 
 /**
  * Curated free MCP endpoints. Most require no API key (one-tap add).
@@ -120,6 +135,20 @@ val popularMcpServers = listOf(
         url = "https://aisenseapi.com/mcp",
         description = "Time, UUID, short links, temp storage, webhooks, disposable inbox, human approvals (28 tools)",
     ),
+    PopularMcpServer(
+        name = "Steam Trends",
+        url = "https://steam.api.trendsapi.ai/mcp",
+        description = "Steam concurrent player trends per game",
+    ),
+    PopularMcpServer(
+        name = "Caiyun Weather",
+        url = "https://mcp-weather.caiyunapp.com/mcp",
+        description = "China weather: realtime, hourly, weekly, history, alerts (free key)",
+        requiresAuth = true,
+        market = McpMarket.CHINA,
+        apiKeyHeader = "X-Caiyun-API-Key",
+        apiKeyScheme = "",
+    ),
 )
 
 /** Merge [defaults] into [existing], keeping any header key the user already set (case-insensitive). */
@@ -174,12 +203,16 @@ internal fun applyPopularDefaultHeaders(
     return if (changed) updated else servers
 }
 
-/** Normalize a pasted API key into an Authorization header value. */
-internal fun authorizationHeaderValue(apiKey: String): String {
+/** Normalize a pasted API key into a header value under [scheme] (`""` = raw key). */
+internal fun apiKeyHeaderValue(apiKey: String, scheme: String): String {
     val raw = apiKey.trim()
     if (raw.isEmpty()) return raw
-    return if (raw.startsWith("Bearer ", ignoreCase = true)) raw else "Bearer $raw"
+    if (scheme.isEmpty()) return raw
+    return if (raw.startsWith(scheme, ignoreCase = true)) raw else scheme + raw
 }
+
+/** Normalize a pasted API key into an Authorization header value. */
+internal fun authorizationHeaderValue(apiKey: String): String = apiKeyHeaderValue(apiKey, "Bearer ")
 
 private fun normalizeMcpUrl(url: String): String = url.trim().trimEnd('/').lowercase()
 

@@ -78,4 +78,34 @@ class PopularMcpServersTest {
         val updated = applyPopularDefaultHeaders(servers)
         assertSame(servers, updated)
     }
+
+    @Test
+    fun `caiyun popular entry requires auth under its own header with raw key`() {
+        val caiyun = popularMcpServers.single { it.name == "Caiyun Weather" }
+        assertTrue(caiyun.requiresAuth)
+        assertEquals(McpMarket.CHINA, caiyun.market)
+        assertEquals("X-Caiyun-API-Key", caiyun.apiKeyHeader)
+        assertEquals("", caiyun.apiKeyScheme)
+        assertTrue(caiyun.headers.isEmpty())
+    }
+
+    @Test
+    fun `every popular entry sits in exactly one market and uses https`() {
+        assertTrue(popularMcpServers.isNotEmpty())
+        for (server in popularMcpServers) {
+            assertTrue(server.url.startsWith("https://"), server.name)
+        }
+        assertTrue(popularMcpServers.any { it.market == McpMarket.CHINA })
+        assertTrue(popularMcpServers.any { it.market == McpMarket.INTERNATIONAL })
+    }
+
+    @Test
+    fun `apiKeyHeaderValue honors scheme and raw keys`() {
+        assertEquals("Bearer jina_abc", apiKeyHeaderValue("jina_abc", "Bearer "))
+        assertEquals("Bearer jina_abc", apiKeyHeaderValue("  jina_abc  ", "Bearer "))
+        assertEquals("bearer jina_abc", apiKeyHeaderValue("bearer jina_abc", "Bearer "))
+        assertEquals("raw-key-123", apiKeyHeaderValue("raw-key-123", ""))
+        assertEquals("raw-key-123", apiKeyHeaderValue("  raw-key-123  ", ""))
+        assertEquals("", apiKeyHeaderValue("   ", "Bearer "))
+    }
 }

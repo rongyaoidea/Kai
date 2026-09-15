@@ -179,6 +179,8 @@
     <string name="settings_mcp_status_error">连接失败</string>
     <string name="settings_mcp_no_tools">未发现工具</string>
     <string name="settings_mcp_popular_servers">热门服务器</string>
+    <string name="settings_mcp_market_international">国际</string>
+    <string name="settings_mcp_market_china">中国</string>
     <string name="settings_export_import_title">导出 / 导入</string>
     <string name="settings_export_import_description">导出的文件包含敏感数据，如 API 密钥和密码。</string>
     <string name="settings_export">导出</string>

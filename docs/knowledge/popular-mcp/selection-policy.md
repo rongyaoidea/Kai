@@ -49,7 +49,15 @@ Timeouts and **retryable** 5xx: retry **once**. If the retry still fails, **keep
 
 # Auth
 
-Only **Jina AI** is `requiresAuth: true` today. Do not invent default secret headers. Existing user headers are never overwritten at runtime.
+Jina AI and Caiyun Weather are `requiresAuth: true`. The add sheet prefills the form with a key field using each host's own header (`Authorization: Bearer …` vs `X-Caiyun-API-Key` raw) via `apiKeyHeader` / `apiKeyScheme`. Do not invent default secret headers. Existing user headers are never overwritten at runtime.
+
+# Markets
+
+The one-tap list is partitioned into International and China tabs (`McpMarket`, display only). Probe and selection rules are identical for both. A host belongs to the China tab when its service is China-facing (Chinese provider, ICP-domain data, or Mandarin-first docs).
+
+# Static URLs only
+
+One-tap entries must be static public URLs. Per-user deployed endpoints (e.g. ModelScope hosted servers whose URL embeds a credential and expires in 24h) and self-host-only servers (local stdio/sse) cannot be listed, no matter how free the underlying API is.
 
 # Dead hosts already removed
 
