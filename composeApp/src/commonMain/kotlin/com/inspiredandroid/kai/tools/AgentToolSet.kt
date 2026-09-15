@@ -60,4 +60,21 @@ fun buildAgentToolSet(
     }
 
     addAll(mcpServerManager.getEnabledMcpTools())
+}.distinctToolNames()
+
+/**
+ * Drops later tools whose schema name is already taken — first occurrence wins, so
+ * native tools always shadow same-named MCP tools. Strict providers (notably DeepSeek,
+ * directly and via the OpenCode Go gateway) answer duplicate function names with 400
+ * ("tool name must be unique") while lenient ones silently accept them, which is why
+ * the same setup works on one model and fails on another.
+ */
+internal fun List<Tool>.distinctToolNames(): List<Tool> {
+    val seen = LinkedHashSet<String>()
+    val kept = filter { seen.add(it.schema.name) }
+    if (kept.size != size) {
+        val dropped = groupingBy { it.schema.name }.eachCount().filterValues { it > 1 }.keys
+        println("tools: dropped duplicate declarations: $dropped")
+    }
+    return kept
 }

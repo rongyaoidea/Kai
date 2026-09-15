@@ -272,7 +272,7 @@ Tool availability is controlled at multiple levels:
 - **Master-toggle-only** — memory, scheduling, heartbeat, email, SMS, and notification tools have no individual per-tool toggle; they are on whenever their master switch in Settings → Agent is on (heartbeat is bundled with the scheduling switch). The Android sandbox tools and desktop's `manage_process` are gated the same way — by the sandbox switch and the shell switch respectively — and likewise carry no switch of their own
 - **On-device (LiteRT) allowlist** — when the active model is an on-device LiteRT model, only a small allowlist of tools is exposed regardless of which other tools are enabled. The current allowlist is: `get_local_time`, `get_location_from_ip`, `web_search`, `open_url`, `fetch_url`, `memory_store`, `memory_forget`, `memory_reinforce`, `search_memories`, `todo`, `search_conversations`, and `execute_shell_command`. Memory tools beyond those listed, email tools, scheduling tools, and heartbeat tools are not surfaced to local models even when their master switches are on.
 
-The platform layer assembles the final list of available tools by checking all gates and per-tool settings, and only enabled tools are sent to the AI provider.
+The platform layer assembles the final list of available tools by checking all gates and per-tool settings, and only enabled tools are sent to the AI provider. Name collisions resolve with first occurrence winning, so native tools always shadow same-named MCP tools — strict providers (notably DeepSeek, directly and via the OpenCode Go gateway) answer duplicate function names with 400 ("tool name must be unique") while lenient ones silently accept them.
 
 ### Approval gate
 
