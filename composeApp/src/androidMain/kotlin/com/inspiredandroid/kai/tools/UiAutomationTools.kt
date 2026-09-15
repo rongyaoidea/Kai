@@ -544,7 +544,7 @@ object UiAutomationTools {
         description = "Read the on-screen UI of any app",
         nameRes = Res.string.tool_ui_dump_name,
         descriptionRes = Res.string.tool_ui_dump_description,
-        isEnabled = false,
+        isEnabled = true,
     )
 
     val uiScreenshotToolInfo = ToolInfo(
@@ -553,7 +553,7 @@ object UiAutomationTools {
         description = "Capture what's on screen to a file",
         nameRes = Res.string.tool_ui_screenshot_name,
         descriptionRes = Res.string.tool_ui_screenshot_description,
-        isEnabled = false,
+        isEnabled = true,
     )
 
     val uiEventsToolInfo = ToolInfo(
@@ -562,7 +562,7 @@ object UiAutomationTools {
         description = "Foreground app and recent UI events",
         nameRes = Res.string.tool_ui_events_name,
         descriptionRes = Res.string.tool_ui_events_description,
-        isEnabled = false,
+        isEnabled = true,
     )
 
     val uiActToolInfo = ToolInfo(
@@ -571,7 +571,7 @@ object UiAutomationTools {
         description = "Tap, type, scroll, or press keys in apps",
         nameRes = Res.string.tool_ui_act_name,
         descriptionRes = Res.string.tool_ui_act_description,
-        isEnabled = false,
+        isEnabled = true,
     )
 
     val appLaunchToolInfo = ToolInfo(
@@ -580,7 +580,7 @@ object UiAutomationTools {
         description = "Open other apps by package name",
         nameRes = Res.string.tool_app_launch_name,
         descriptionRes = Res.string.tool_app_launch_description,
-        isEnabled = false,
+        isEnabled = true,
     )
 
     val privilegedShellToolInfo = ToolInfo(
@@ -589,7 +589,7 @@ object UiAutomationTools {
         description = "ADB-level shell via Shizuku",
         nameRes = Res.string.tool_privileged_shell_name,
         descriptionRes = Res.string.tool_privileged_shell_description,
-        isEnabled = false,
+        isEnabled = true,
     )
 
     val privilegedInputToolInfo = ToolInfo(
@@ -598,6 +598,6 @@ object UiAutomationTools {
         description = "Raw key/touch events via Shizuku",
         nameRes = Res.string.tool_privileged_input_name,
         descriptionRes = Res.string.tool_privileged_input_description,
-        isEnabled = false,
+        isEnabled = true,
     )
 }

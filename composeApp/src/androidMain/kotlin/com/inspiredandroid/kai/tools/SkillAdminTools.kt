@@ -146,13 +146,13 @@ object SkillAdminTools {
             id = "install_skill",
             name = "Install Skill",
             description = "Install a skill from GitHub, a direct URL, or pasted text",
-            isEnabled = false,
+            isEnabled = true,
         ),
         ToolInfo(
             id = "uninstall_skill",
             name = "Uninstall Skill",
             description = "Remove an installed skill",
-            isEnabled = false,
+            isEnabled = true,
         ),
     )
 }

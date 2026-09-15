@@ -218,19 +218,24 @@ class ProcessManager(private val sandboxManager: LinuxSandboxManager) {
                 }
                 val outBuf = StringBuilder()
                 val errBuf = StringBuilder()
-                val outDrain = CompletableFuture.runAsync {
-                    drainBounded(process.inputStream, outBuf) { session.stdout = it }
-                }
-                val errDrain = CompletableFuture.runAsync {
-                    drainBounded(process.errorStream, errBuf) { session.stderr = it }
-                }
+                // Dedicated threads, not ForkJoinPool: the outer task blocks in
+                // waitFor(), and on a 2-thread common pool (3-core devices) the
+                // second drain would never be scheduled — a child filling the
+                // stderr pipe would then wedge until the timeout and its output
+                // would be lost.
+                val outDrain = Thread { drainBounded(process.inputStream, outBuf) { session.stdout = it } }
+                val errDrain = Thread { drainBounded(process.errorStream, errBuf) { session.stderr = it } }
+                outDrain.isDaemon = true
+                errDrain.isDaemon = true
+                outDrain.start()
+                errDrain.start()
                 val completed = try {
                     process.waitFor(timeoutSeconds, TimeUnit.SECONDS)
                 } catch (_: Exception) {
                     false
                 }
-                runCatching { outDrain.get(5, TimeUnit.SECONDS) }
-                runCatching { errDrain.get(5, TimeUnit.SECONDS) }
+                runCatching { outDrain.join(5_000) }
+                runCatching { errDrain.join(5_000) }
                 runCatching { process.inputStream.close() }
                 runCatching { process.errorStream.close() }
                 runCatching { process.outputStream.close() }
@@ -242,8 +247,8 @@ class ProcessManager(private val sandboxManager: LinuxSandboxManager) {
                     } else {
                         session.exitCode = runCatching { process.exitValue() }.getOrDefault(-1)
                     }
-                    session.stdout = outBuf.toString()
-                    session.stderr = errBuf.toString()
+                    session.stdout = outBuf.snapshot()
+                    session.stderr = errBuf.snapshot()
                 }
             } catch (e: Exception) {
                 if (!session.cancelled) {
@@ -272,6 +277,9 @@ class ProcessManager(private val sandboxManager: LinuxSandboxManager) {
             runCatching { stream.close() }
         }
     }
+
+    /** Thread-safe read for a buffer a drain thread may still hold. */
+    private fun StringBuilder.snapshot(): String = synchronized(this) { toString() }
 }
 
 /**

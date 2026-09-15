@@ -413,6 +413,9 @@ class LinuxSandboxManager(
 
     private fun closeAllShells() {
         detachShells().forEach { it.reset() }
+        // The native tier is independent of any install; reset/uninstall must
+        // not leave its mksh sessions running either.
+        nativeShells.closeAll()
     }
 
     fun installPackages() {

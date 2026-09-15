@@ -184,6 +184,6 @@ object WebActTools {
         description = "Tap, fill, and scroll web pages in the device browser",
         nameRes = null,
         descriptionRes = null,
-        isEnabled = false,
+        isEnabled = true,
     )
 }

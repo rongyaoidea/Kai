@@ -22,6 +22,12 @@ private const val NATIVE_MAX_OUTPUT_LENGTH = 15_000
 private const val NATIVE_SH = "/system/bin/sh"
 private const val SENTINEL_PREFIX = "__kai_end__"
 
+// Startup probe: the shell reports its own pid once (`$$`), so teardown can
+// signal the commands it forked. Same device as the proot tier's probe — the
+// app has no supported way to read a child's pid from the Java side
+// (`Process.pid()` is not in Android's public API database).
+private const val PID_PROBE_PREFIX = "__kai_shpid__"
+
 /**
  * Persistent mksh session on the Android host — the zero-install tier of
  * `execute_shell_command`, used whenever the proot sandbox is not Ready. No
@@ -43,8 +49,8 @@ class NativeShellSession(home: File) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile private var process: Process? = null
-
     @Volatile private var writer: BufferedWriter? = null
+    @Volatile private var shellPid: Int = -1
     private val currentSink = AtomicReference<Sink?>(null)
 
     private class Sink(
@@ -103,9 +109,12 @@ class NativeShellSession(home: File) {
 
         // Source the staged file (reading needs no exec permission, executing
         // it would be refused on app storage), capture the exit, emit the
-        // sentinel to stderr so stdout redirects can't swallow it.
+        // sentinel to stderr so stdout redirects can't swallow it. The leading
+        // \n flushes any partial stderr line — without it a command whose last
+        // stderr write has no trailing newline would glue the sentinel onto
+        // that line and the dispatcher would never recognise it.
         val line = ". ${sq(cmdFile.absolutePath)}; __kai_st=$?; rm -f ${sq(cmdFile.absolutePath)}; " +
-            "printf '%s\\n' \"$SENTINEL_PREFIX $nonce \$__kai_st \$PWD\" >&2"
+            "printf '\\n%s\\n' \"$SENTINEL_PREFIX $nonce \$__kai_st \$PWD\" >&2"
         try {
             val w = writer ?: throw IllegalStateException("shell has no stdin")
             w.write(line)
@@ -119,6 +128,10 @@ class NativeShellSession(home: File) {
 
         val result = withTimeoutOrNull(timeoutSeconds.seconds) { sink.done.await() }
         if (result == null) {
+            // Kill the command's own children first: they are grandchildren of
+            // this process from the app's point of view, so destroying the shell
+            // would orphan anything it forked.
+            killChildProcesses()
             proc.destroy()
             val recovered = withTimeoutOrNull(2.seconds) { sink.done.await() }
             currentSink.set(null)
@@ -148,13 +161,25 @@ class NativeShellSession(home: File) {
             return
         }
         process = started
+        shellPid = -1
         writer = started.outputStream.bufferedWriter()
         val outReader = started.inputStream.bufferedReader()
         val errReader = started.errorStream.bufferedReader()
         scope.launch { drainLines(outReader, ::dispatchStdout) }
         scope.launch { drainLines(errReader, ::dispatchStderr) }
+        // Report the shell's pid before any user command can run, so a timeout
+        // on the very first command still has something to signal.
+        runCatching {
+            writer?.write("printf '%s\\n' \"$PID_PROBE_PREFIX \$\$\" >&2")
+            writer?.newLine()
+            writer?.flush()
+        }
         scope.launch {
             runCatching { started.waitFor() }
+            // Generation guard: if reset()/a new ensureShell() already replaced
+            // this process, the late death notice must not tear down the
+            // replacement (its writer, its sink) from under a live command.
+            if (process !== started) return@launch
             onDeath()
         }
     }
@@ -185,6 +210,11 @@ class NativeShellSession(home: File) {
 
     private fun dispatchStderr(line: String) {
         if (line.isEmpty()) return
+        // Startup pid probe — handled regardless of whether a sink is active.
+        if (line.startsWith("$PID_PROBE_PREFIX ")) {
+            line.removePrefix("$PID_PROBE_PREFIX ").trim().toIntOrNull()?.let { shellPid = it }
+            return
+        }
         if (line.startsWith("$SENTINEL_PREFIX ")) {
             val parts = line.removePrefix("$SENTINEL_PREFIX ").split(' ', limit = 3)
             val sink = currentSink.get()
@@ -207,10 +237,31 @@ class NativeShellSession(home: File) {
         val proc = process
         process = null
         if (proc != null) {
+            // Signal forked children before the shell dies, or they outlive it.
+            killChildProcesses()
+            shellPid = -1
             runCatching { proc.destroyForcibly() }
             runCatching { proc.inputStream.close() }
             runCatching { proc.errorStream.close() }
             runCatching { proc.outputStream.close() }
+        }
+    }
+
+    /**
+     * Best-effort kill of the shell's forked commands. The persistent shell
+     * forks each external command, so killing only the shell leaves e.g. a
+     * `sleep` or downloader running. toybox provides pkill on every device;
+     * failure is swallowed since this runs on teardown paths. One generation
+     * deep, matching the proot tier's SIGINT/SIGTERM/SIGKILL sweep.
+     */
+    private fun killChildProcesses() {
+        val pid = shellPid
+        if (pid <= 0) return
+        runCatching {
+            ProcessBuilder("/system/bin/pkill", "-KILL", "-P", pid.toString())
+                .redirectErrorStream(true)
+                .start()
+                .waitFor(2, TimeUnit.SECONDS)
         }
     }
 
@@ -262,6 +313,7 @@ class NativeShellSession(home: File) {
  */
 class NativeShells(filesDir: File) {
     val home: File = File(filesDir, "kai-native").apply { mkdirs() }
+    private val tmpDir: File = File(home, ".kai-tmp")
 
     private val sessions = mutableMapOf<String, NativeShellSession>()
 
@@ -271,8 +323,29 @@ class NativeShells(filesDir: File) {
         sessions.getOrPut(sessionId) { NativeShellSession(home) }
     }
 
+    /** Best-effort kill of a timed-out one-shot's forked command. */
+    private fun killChildrenFromPidFile(pidFile: File) {
+        val pid = runCatching { pidFile.readText().trim().toInt() }.getOrDefault(-1)
+        if (pid <= 0) return
+        runCatching {
+            ProcessBuilder("/system/bin/pkill", "-KILL", "-P", pid.toString())
+                .redirectErrorStream(true)
+                .start()
+                .waitFor(2, TimeUnit.SECONDS)
+        }
+    }
+
     fun close(sessionId: String) {
         synchronized(sessions) { sessions.remove(sessionId) }?.close()
+    }
+
+    /** Close every live native shell (sandbox reset / uninstall). */
+    fun closeAll() {
+        synchronized(sessions) {
+            val snapshot = sessions.values.toList()
+            sessions.clear()
+            snapshot
+        }.forEach { it.close() }
     }
 
     /** Resolve a `working_dir` argument: absolute stays, relative anchors at [home], garbage falls back to [home]. */
@@ -296,9 +369,15 @@ class NativeShells(filesDir: File) {
         envMap: Map<String, String>,
     ): Map<String, Any> = withContext(Dispatchers.IO) {
         val dir = resolveDir(workingDir)
+        // The shell reports its own pid before running the command, so a timeout
+        // can signal whatever the command forked. `Process.pid()` is not public
+        // Android API, so this file is the only way to reach it.
+        tmpDir.mkdirs()
+        val pidFile = File(tmpDir, ".kai_pid_${randomHex()}")
+        val wrapped = "echo \$\$ > ${sq(pidFile.absolutePath)}; $command"
         val process: Process
         try {
-            process = ProcessBuilder(NATIVE_SH, "-c", command)
+            process = ProcessBuilder(NATIVE_SH, "-c", wrapped)
                 .directory(dir)
                 .apply { environment().putAll(envMap) }
                 .redirectErrorStream(false)
@@ -328,6 +407,7 @@ class NativeShells(filesDir: File) {
             false
         }
         if (!completed) {
+            killChildrenFromPidFile(pidFile)
             runCatching { process.destroyForcibly() }
         }
         runCatching { outReader.join(5_000) }
@@ -335,11 +415,14 @@ class NativeShells(filesDir: File) {
         runCatching { process.inputStream.close() }
         runCatching { process.errorStream.close() }
         runCatching { process.outputStream.close() }
+        runCatching { pidFile.delete() }
         val exit = if (completed) runCatching { process.exitValue() }.getOrDefault(-1) else -1
+        val stdout = outBuf.snapshot()
+        val stderr = errBuf.snapshot()
         mapOf(
             "success" to (completed && exit == 0),
-            "stdout" to outBuf.toString().smartTruncate(NATIVE_MAX_OUTPUT_LENGTH),
-            "stderr" to (if (completed) errBuf.toString() else errBuf.toString() + "\nCommand timed out").smartTruncate(NATIVE_MAX_OUTPUT_LENGTH),
+            "stdout" to stdout.smartTruncate(NATIVE_MAX_OUTPUT_LENGTH),
+            "stderr" to (if (completed) stderr else "$stderr\nCommand timed out").smartTruncate(NATIVE_MAX_OUTPUT_LENGTH),
             "exit_code" to exit,
             "timed_out" to !completed,
             "cwd" to dir.absolutePath,
@@ -369,6 +452,9 @@ private fun appendBounded(buf: StringBuilder, line: String) {
     if (buf.isNotEmpty()) buf.append('\n')
     buf.append(line)
 }
+
+/** Thread-safe read for buffers the drain threads still hold a lock on. */
+private fun StringBuilder.snapshot(): String = synchronized(this) { toString() }
 
 private fun sq(value: String): String = "'" + value.replace("'", "'\\''") + "'"
 

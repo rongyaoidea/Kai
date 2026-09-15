@@ -147,6 +147,6 @@ object BrowsePageTool : Tool {
         description = "Render pages with the system browser",
         nameRes = Res.string.tool_browse_page_name,
         descriptionRes = Res.string.tool_browse_page_description,
-        isEnabled = false,
+        isEnabled = true,
     )
 }

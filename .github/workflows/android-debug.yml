@@ -55,7 +55,6 @@ jobs:
       - name: Install Android Build Tools
         run: |
           sdkmanager "build-tools;36.0.0"
-          sdkmanager "build-tools;29.0.3"
 
       - name: Show debug key fingerprint
         run: |
