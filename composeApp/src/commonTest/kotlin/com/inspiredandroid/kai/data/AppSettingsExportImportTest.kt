@@ -846,13 +846,17 @@ class AppSettingsExportImportTest {
         val json = appSettings.exportToJson(toolIds)
         val sections = detectExportableSections(json)
         // Tools is the only section that always has data on a fresh install (default tool states).
-        assertEquals(setOf(ImportSection.TOOLS), sections.keys)
+        // SMS read defaults to on, so its toggle is real user data and shows as well.
+        assertEquals(setOf(ImportSection.TOOLS, ImportSection.SMS), sections.keys)
     }
 
     @Test
     fun `detectExportableSections hides SMS when toggles are off`() {
         val appSettings = createAppSettings()
-        // SMS defaults: all flags false. exportToJson still writes them, but detection should ignore.
+        // SMS read defaults to on — force both toggles off. exportToJson still
+        // writes them, but detection should ignore.
+        appSettings.setSmsEnabled(false)
+        appSettings.setSmsSendEnabled(false)
         val json = appSettings.exportToJson(toolIds)
         val sections = detectExportableSections(json)
         assertFalse(ImportSection.SMS in sections)
