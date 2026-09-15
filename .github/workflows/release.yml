@@ -53,6 +53,11 @@ jobs:
 
   play-store:
     name: Upload AAB to Play Store
+    # Disabled until the repo carries PLAY_STORE_* secrets: a reusable-workflow
+    # job cannot use continue-on-error, so an unconfigured call would fail every
+    # tag run. Add the secrets and set the repository variable
+    # PLAY_STORE_UPLOAD=true to bring store uploads back into the release.
+    if: ${{ vars.PLAY_STORE_UPLOAD == 'true' }}
     uses: ./.github/workflows/play-store.yml
     with:
       ref: ${{ github.ref }}
