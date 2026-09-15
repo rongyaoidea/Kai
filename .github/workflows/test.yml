@@ -28,6 +28,11 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 'tools' was removed from the SDK repository; requesting it fails the
+          # step (sdkmanager exit 1). platform-tools is all CI needs explicitly —
+          # AGP auto-downloads the compileSdk/build-tools it builds against.
+          packages: platform-tools
 
       - name: Set up Java
         uses: actions/setup-java@v4
