@@ -470,6 +470,28 @@ sealed class Service(
         reasoningRequestMode = ReasoningRequestMode.REASONING_CONTENT,
     )
 
+    /**
+     * OpenCode Go: the $10/month subscription for open coding models. A separate
+     * gateway (`zen/go/v1`) with a different catalog than Zen (DeepSeek V4, Kimi,
+     * Qwen, GLM, MiniMax, …) — hence a separate preset rather than a base-URL
+     * tweak. Same key as Zen, from the same console.
+     */
+    data object OpenCodeGo : Service(
+        id = "opencode-go",
+        displayName = "OpenCode Go",
+        icon = Res.drawable.ic_service_opencode,
+        requiresApiKey = true,
+        defaultModel = null,
+        settingsKeyPrefix = "opencodego",
+        chatUrl = "https://opencode.ai/zen/go/v1/chat/completions",
+        responsesUrl = "https://opencode.ai/zen/go/v1/responses",
+        messagesUrl = "https://opencode.ai/zen/go/v1/messages",
+        modelsUrl = "https://opencode.ai/zen/go/v1/models",
+        apiKeyUrl = "https://opencode.ai/docs/go/",
+        apiKeyUrlDisplay = "opencode.ai/docs/go",
+        reasoningRequestMode = ReasoningRequestMode.REASONING_CONTENT,
+    )
+
     data object PublicAI : Service(
         id = "publicai",
         displayName = "Public AI",
@@ -548,7 +570,7 @@ sealed class Service(
     )
 
     companion object {
-        val all: List<Service> get() = listOf(Free, AtlasCloud, Gemini, Anthropic, OpenAI, DeepSeek, Mistral, XAI, OpenRouter, Groq, Nvidia, Cerebras, OllamaCloud, LongCat, Together, HuggingFace, Venice, Moonshot, Zai, ZaiCodingPlan, Minimax, AiHubMix, DeepInfra, FireworksAI, OpenCode, PublicAI, AIHorde, Perplexity, OpenAICompatible, LiteRT)
+        val all: List<Service> get() = listOf(Free, AtlasCloud, Gemini, Anthropic, OpenAI, DeepSeek, Mistral, XAI, OpenRouter, Groq, Nvidia, Cerebras, OllamaCloud, LongCat, Together, HuggingFace, Venice, Moonshot, Zai, ZaiCodingPlan, Minimax, AiHubMix, DeepInfra, FireworksAI, OpenCode, OpenCodeGo, PublicAI, AIHorde, Perplexity, OpenAICompatible, LiteRT)
 
         const val DEFAULT_OPENAI_COMPATIBLE_BASE_URL = "http://localhost:11434/v1"
 

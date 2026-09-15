@@ -2,7 +2,7 @@
 
 **Last verified:** 2026-09-15
 
-Kai supports 29 LLM providers (plus a built-in Free tier). Each provider uses one of three API formats: **OpenAI-compatible** (most services), **Gemini native**, or **Anthropic native** -- plus **LiteRT on-device** for local inference. A handful of OpenAI models additionally require OpenAI's **Responses API**; Kai switches to it per model, transparently. Users can configure multiple service instances, reorder them, and Kai automatically falls back through the chain on failure.
+Kai supports 30 LLM providers (plus a built-in Free tier). Each provider uses one of three API formats: **OpenAI-compatible** (most services), **Gemini native**, or **Anthropic native** -- plus **LiteRT on-device** for local inference. A handful of OpenAI models additionally require OpenAI's **Responses API**; Kai switches to it per model, transparently. Users can configure multiple service instances, reorder them, and Kai automatically falls back through the chain on failure.
 
 ## Concepts
 
@@ -77,17 +77,19 @@ The OpenCode gateway serves different model families on different endpoints, and
 - **Messages** (`/messages`, Anthropic shape): Zen's Claude and Qwen rows; Go additionally serves its MiniMax rows there (Zen serves the same MiniMax ids on chat completions, so the Zen and Go base URLs select different lists). Auth is the gateway bearer key with the usual session header; the request/response handling is the same Anthropic loop Kai uses for Anthropic itself. Selected by `requiresMessagesApi`.
 - **Chat completions**: everything else (Kimi, DeepSeek, GLM, LongCat, MiMo, the other free models, ...).
 
-The routing applies to the built-in OpenCode service and to any OpenAI-Compatible API instance pointed at an opencode.ai base URL (how Go is reached: `https://opencode.ai/zen/go/v1`). To extend either list for newly published gateway models, add a prefix in `ModelCapabilities.kt`.
+The routing applies to the built-in OpenCode and OpenCode Go services and to any OpenAI-Compatible API instance pointed at an opencode.ai base URL (the pre-preset way to reach Go: `https://opencode.ai/zen/go/v1`). To extend either list for newly published gateway models, add a prefix in `ModelCapabilities.kt`.
+
+OpenCode Go is a separate preset because Zen and Go are different products with different catalogs: Zen is pay-as-you-go flagship models (plus the free tier), Go is a $10/month subscription for open coding models (DeepSeek V4, Kimi K2/K3, Qwen3, GLM-5, MiniMax, LongCat, MiMo, Muse Spark Contributor, …). Subscribe in the Zen console and paste the same API key into the OpenCode Go service; the model list comes from the Go gateway.
 
 ### Session Header (OpenCode)
 
 OpenCode Zen identifies the client behind a request by an `x-opencode-session` header and rejects requests that arrive without one. Kai sends the current conversation id as that session id, so one chat -- however many turns, tool round-trips or bailout retries it takes -- reads as a single session upstream, and separate chats read as separate sessions. Requests that belong to no conversation (fetching the model list, connection validation) carry a session id generated once per app process instead. The header is sent on every OpenCode request shape: chat completions, the Responses API, and the model list.
 
-The id is Kai's own random conversation identifier; nothing about the user or the machine is derived from it. No other provider is sent the header -- except an OpenAI-Compatible API instance pointed at an opencode.ai base URL, which is how OpenCode Go is reached today (`https://opencode.ai/zen/go/v1`): Go requires the same stable per-conversation session header for routing and prompt caching, so those requests carry it too.
+The id is Kai's own random conversation identifier; nothing about the user or the machine is derived from it. No other provider is sent the header -- except an OpenAI-Compatible API instance pointed at an opencode.ai base URL (the pre-preset way to reach Go): Go requires the same stable per-conversation session header for routing and prompt caching, so those requests carry it too.
 
 Zen's free-model pool additionally gates on User-Agent rather than key or IP: only `opencode/<version>` gets 200s, anything else is answered 429 FreeUsageLimitError with zero usage (the `x-opencode-*` headers alone do not unlock it). Kai therefore overrides its default User-Agent with the official one on Zen requests only; every other provider keeps reporting Kai honestly. Go endpoints are the deliberate exception: Go asks clients to identify with their own user agent rather than a generic name and does not gate on the official one, so Go requests keep Kai's own User-Agent and gain only the session header. Separately, keyed Zen enforces a silent ~15-20 RPM burst limit with no Retry-After headers — the per-minute request cap in Services settings exists exactly for pacing past that wall.
 
-To use Go models today, add an OpenAI-Compatible API service with base URL `https://opencode.ai/zen/go/v1` and paste the Go API key from the Zen console; headers are applied automatically. Zen's free models (e.g. the `-free` suffixed ids in the Zen model list) work through the built-in OpenCode service the same way.
+To use Go models, add the built-in **OpenCode Go** service and paste the API key from the Zen console; headers and per-family endpoint routing are applied automatically. (Before the preset existed, the path was an OpenAI-Compatible API service with base URL `https://opencode.ai/zen/go/v1` — that still works.) Zen's free models (e.g. the `-free` suffixed ids in the Zen model list) work through the built-in OpenCode service the same way.
 
 ### Prompt caching (Anthropic)
 
@@ -122,6 +124,7 @@ Anthropic bills cache reads at ~10% of input price, and Kai's tool loops re-send
 | Deep Infra | `deepinfra` | Yes | OpenAI-compatible |
 | Fireworks AI | `fireworksai` | Yes | OpenAI-compatible |
 | OpenCode | `opencode` | Yes | OpenAI-compatible (every request carries an `x-opencode-session` header — see [Session Header](#session-header-opencode); models route per family across chat completions, Responses and Messages — see [Gateway endpoint routing](#gateway-endpoint-routing-opencode)) |
+| OpenCode Go | `opencode-go` | Yes | OpenAI-compatible ($10/month subscription for open coding models: DeepSeek V4, Kimi, Qwen, GLM, MiniMax, … — a separate gateway and catalog from Zen, so a separate preset; same API key from the Zen console; requests carry the session header with Kai's own User-Agent) |
 | Public AI | `publicai` | Yes | OpenAI-compatible |
 | AI Horde | `aihorde` | Yes (anonymous key `0000000000` allowed at lowest priority) | OpenAI-compatible (via [oai.aihorde.net](https://oai.aihorde.net/); model list is the set of text models with online volunteer workers — availability and latency vary) |
 | Perplexity | `perplexity` | Yes | OpenAI-compatible (Sonar; ships with a curated default model list — no authenticated `/models` endpoint for Sonar; connection validation probes the chat endpoint with an incomplete body to check the API key) |

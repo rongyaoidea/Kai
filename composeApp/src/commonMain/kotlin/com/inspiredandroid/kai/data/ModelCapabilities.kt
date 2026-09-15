@@ -136,19 +136,20 @@ internal val RESPONSES_API_MODELS = listOf(
 )
 
 /**
- * True when this service+model reaches OpenCode's gateway: the first-party OpenCode service
- * (Zen) or the OpenAI-Compatible service pointed at an opencode.ai base URL (how Go is
- * reached: `https://opencode.ai/zen/go/v1`). Mirrors `isOpenCodeEndpoint` in Requests.kt,
- * duplicated here to avoid a data→network package cycle.
+ * True when this service+model reaches OpenCode's gateway: the first-party OpenCode (Zen)
+ * and OpenCode Go services, or the OpenAI-Compatible service pointed at an opencode.ai
+ * base URL (how Go was reached before the dedicated preset). Mirrors `isOpenCodeEndpoint`
+ * in Requests.kt, duplicated here to avoid a data→network package cycle.
  */
 internal fun isOpenCodeGateway(service: Service, baseUrl: String = ""): Boolean {
-    if (service == Service.OpenCode) return true
+    if (service == Service.OpenCode || service == Service.OpenCodeGo) return true
     if (service != Service.OpenAICompatible) return false
     return baseUrl.contains("opencode.ai", ignoreCase = true)
 }
 
-/** True for Go bases (`…/zen/go/…`); false for Zen. Only meaningful with [isOpenCodeGateway]. */
+/** True for Go (the Go preset, or `…/zen/go/…` bases); false for Zen. Only meaningful with [isOpenCodeGateway]. */
 internal fun isOpenCodeGoBase(service: Service, baseUrl: String = ""): Boolean {
+    if (service == Service.OpenCodeGo) return true
     if (service == Service.OpenCode) return false
     return baseUrl.contains("/zen/go/", ignoreCase = true)
 }

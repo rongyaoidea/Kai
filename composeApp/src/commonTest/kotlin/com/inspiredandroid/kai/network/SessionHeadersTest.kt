@@ -48,7 +48,7 @@ class SessionHeadersTest {
 
     @Test
     fun otherProvidersGetNoSessionHeader() {
-        for (service in Service.all.filter { it != Service.OpenCode }) {
+        for (service in Service.all.filter { it != Service.OpenCode && it != Service.OpenCodeGo }) {
             assertEquals(emptyMap(), sessionHeadersFor(service, "conv-42"), "unexpected header for ${service.id}")
         }
     }
@@ -61,7 +61,7 @@ class SessionHeadersTest {
 
     @Test
     fun otherProvidersKeepTheDefaultUserAgent() {
-        for (service in Service.all.filter { it != Service.OpenCode }) {
+        for (service in Service.all.filter { it != Service.OpenCode && it != Service.OpenCodeGo }) {
             assertEquals(null, userAgentFor(service), "unexpected UA override for ${service.id}")
         }
     }
@@ -94,5 +94,15 @@ class SessionHeadersTest {
         val url = "http://localhost:11434/v1/chat/completions"
         assertEquals(emptyMap(), sessionHeadersFor(Service.OpenAICompatible, "conv-42", url))
         assertEquals(null, userAgentFor(Service.OpenAICompatible, url))
+    }
+
+    @Test
+    fun openCodeGoPresetCarriesSessionHeaderAndKeepsKaiUserAgent() {
+        assertEquals(
+            mapOf(header to "conv-42"),
+            sessionHeadersFor(Service.OpenCodeGo, "conv-42"),
+        )
+        assertEquals(null, userAgentFor(Service.OpenCodeGo))
+        assertEquals(null, userAgentFor(Service.OpenCodeGo, goChatUrl))
     }
 }

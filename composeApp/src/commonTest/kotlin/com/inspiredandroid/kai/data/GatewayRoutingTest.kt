@@ -78,4 +78,16 @@ class GatewayRoutingTest {
         assertFalse(requiresMessagesApi(Service.OpenRouter, "anthropic/claude-sonnet-4-5"))
         assertFalse(requiresMessagesApi(Service.OpenAICompatible, "claude-sonnet-4-5", "http://localhost:11434/v1"))
     }
+
+    @Test
+    fun `go preset routes like the go base url`() {
+        assertTrue(requiresResponsesApi(Service.OpenCodeGo, "gpt-5.6-luna"))
+        assertTrue(requiresResponsesApi(Service.OpenCodeGo, "muse-spark-1.3-contributor"))
+        assertFalse(requiresResponsesApi(Service.OpenCodeGo, "kimi-k2.6"))
+        assertTrue(requiresMessagesApi(Service.OpenCodeGo, "minimax-m2.7"))
+        assertTrue(requiresMessagesApi(Service.OpenCodeGo, "qwen3.8-flash"))
+        assertTrue(requiresMessagesApi(Service.OpenCodeGo, "claude-sonnet-4-5"))
+        assertFalse(requiresMessagesApi(Service.OpenCodeGo, "kimi-k2.6"))
+        assertFalse(requiresMessagesApi(Service.OpenCodeGo, "grok-4.6"))
+    }
 }

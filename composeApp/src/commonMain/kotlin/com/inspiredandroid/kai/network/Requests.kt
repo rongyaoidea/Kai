@@ -79,12 +79,12 @@ private fun HttpRequestBuilder.applyTimeout(requestTimeoutMs: Long?) {
 private val processSessionId: String by lazy { Uuid.random().toString() }
 
 /**
- * True when this request targets OpenCode's gateway: the first-party OpenCode service (Zen),
- * or an OpenAI-Compatible instance pointed at an opencode.ai base URL — the path users take
- * today to reach Go (`https://opencode.ai/zen/go/v1`) or Zen through a custom entry.
+ * True when this request targets OpenCode's gateway: the first-party OpenCode (Zen) and
+ * OpenCode Go services, or an OpenAI-Compatible instance pointed at an opencode.ai base
+ * URL — the path users took to reach Go before the dedicated preset existed.
  */
 internal fun isOpenCodeEndpoint(service: Service, url: String): Boolean {
-    if (service == Service.OpenCode) return true
+    if (service == Service.OpenCode || service == Service.OpenCodeGo) return true
     if (service != Service.OpenAICompatible) return false
     return url.contains("opencode.ai", ignoreCase = true)
 }
@@ -124,6 +124,7 @@ internal const val OPENCODE_USER_AGENT = "opencode/1.18.16"
 
 internal fun userAgentFor(service: Service, url: String = ""): String? = when {
     service == Service.OpenCode -> OPENCODE_USER_AGENT
+    service == Service.OpenCodeGo -> null
     service == Service.OpenAICompatible && isOpenCodeEndpoint(service, url) && !isOpenCodeGoUrl(url) -> OPENCODE_USER_AGENT
     else -> null
 }

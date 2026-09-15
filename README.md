@@ -69,7 +69,7 @@ Kai 9000's Interactive UI lets the AI generate full interactive screens — quiz
 
 - **Persistent memory** — Kai remembers important details across conversations and uses them automatically
 - **Customizable soul** — Define the AI's personality and behavior with an editable system prompt
-- **Multi-service fallback** — 29 LLM providers with automatic failover
+- **Multi-service fallback** — 30 LLM providers with automatic failover
 - **On-device inference** — Run AI models locally on Android using LiteRT, no internet needed
 - **Tool execution** — Web search, notifications, calendar events, shell commands, and more
 - **MCP server support** — Connect to remote tool servers via the Model Context Protocol
