@@ -35,21 +35,28 @@ jobs:
       - name: Install Android Build Tools
         run: |
           sdkmanager "build-tools;36.0.0"
-      - name: Build APK
+      - name: Decode release keystore
+        run: echo "${{ secrets.KEYSTORE_B64 }}" | base64 --decode > /tmp/release.keystore
+      - name: Build and sign APK
+        # The release build config in androidApp/build.gradle.kts already picks
+        # the release signingConfig when KEYSTORE_FILE is set, so Gradle signs
+        # AND zipaligns the APK itself — no third-party signing action (which
+        # also dragged in build-tools 29 just to reach zipalign).
         run: bash ./gradlew :androidApp:assembleFossRelease --stacktrace
-      - name: Sign APK
-        uses: r0adkll/sign-android-release@v1
-        with:
-          releaseDirectory: androidApp/build/outputs/apk/foss/release
-          signingKeyBase64: ${{ secrets.KEYSTORE_B64 }}
-          alias: ${{ secrets.KEY_ALIAS }}
-          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
-          keyPassword: ${{ secrets.KEYSTORE_PASSWORD }}
+        env:
+          KEYSTORE_FILE: /tmp/release.keystore
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+      - name: Verify APK signature
+        run: |
+          APKSIGNER=$(ls "$ANDROID_HOME"/build-tools/*/apksigner | sort -V | tail -1)
+          "$APKSIGNER" verify --print-certs \
+            androidApp/build/outputs/apk/foss/release/androidApp-foss-release.apk
       - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
           name: signed-apk
-          path: androidApp/build/outputs/apk/foss/release/androidApp-foss-release-signed.apk
+          path: androidApp/build/outputs/apk/foss/release/androidApp-foss-release.apk
 
   play-store:
     name: Upload AAB to Play Store
@@ -85,7 +92,7 @@ jobs:
       - name: Rename assets
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          mv androidApp-foss-release-signed.apk "Kai-${VERSION}-android.apk"
+          mv androidApp-foss-release.apk "Kai-${VERSION}-android.apk"
 
       - name: Extract changelog
         run: |
