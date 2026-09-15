@@ -74,10 +74,12 @@ To add a newly affected model family, extend `RESPONSES_API_MODELS` in `ModelCap
 The OpenCode gateway serves different model families on different endpoints, and Kai routes per model automatically -- the same conversation can use chat completions, Responses, and Messages across fallback entries without any setting:
 
 - **Responses** (`/responses`): the gateway's GPT, Grok and Muse Spark rows, including the free `muse-spark-1.3-contributor-free`. Selected by the `OPENCODE_RESPONSES_API_MODELS` prefixes in `ModelCapabilities.kt`.
-- **Messages** (`/messages`, Anthropic shape): Zen's Claude and Qwen rows; Go additionally serves its MiniMax rows there (Zen serves the same MiniMax ids on chat completions, so the Zen and Go base URLs select different lists). Auth is the gateway bearer key with the usual session header; the request/response handling is the same Anthropic loop Kai uses for Anthropic itself. Selected by `requiresMessagesApi`.
+- **Messages** (`/messages`, Anthropic shape): Zen's Claude and Qwen rows; Go additionally serves its MiniMax rows there (Zen serves the same MiniMax ids on chat completions, so the Zen and Go base URLs select different lists). Auth is the gateway bearer key with the usual session header; the request/response handling is the same Anthropic loop Kai uses for Anthropic itself, minus prompt-caching breakpoints. Selected by `requiresMessagesApi`.
 - **Chat completions**: everything else (Kimi, DeepSeek, GLM, LongCat, MiMo, the other free models, ...).
 
 The routing applies to the built-in OpenCode and OpenCode Go services and to any OpenAI-Compatible API instance pointed at an opencode.ai base URL (the pre-preset way to reach Go: `https://opencode.ai/zen/go/v1`). To extend either list for newly published gateway models, add a prefix in `ModelCapabilities.kt`.
+
+Payload discipline matters more on Go than anywhere else: its gateway validates with a strict schema and answers any non-standard field with 400 Extra inputs are not permitted. Kai therefore sends Go the minimal standard shape — no `reasoning_content` echo, no `cache_control` breakpoints (unlike direct Anthropic, which keeps both).
 
 OpenCode Go is a separate preset because Zen and Go are different products with different catalogs: Zen is pay-as-you-go flagship models (plus the free tier), Go is a $10/month subscription for open coding models (DeepSeek V4, Kimi K2/K3, Qwen3, GLM-5, MiniMax, LongCat, MiMo, Muse Spark Contributor, …). Subscribe in the Zen console and paste the same API key into the OpenCode Go service; the model list comes from the Go gateway.
 

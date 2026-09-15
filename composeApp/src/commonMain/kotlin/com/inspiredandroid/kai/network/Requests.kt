@@ -409,8 +409,12 @@ class Requests(
                         model = credentials.modelId,
                         messages = messages,
                         max_tokens = 8192,
-                        system = systemInstruction?.let { AnthropicChatRequestDto.cachedSystemPrompt(it) },
-                        tools = tools.toRequestTools { it.toAnthropicTool() }?.withCacheBreakpoint(),
+                        // Plain-string system and no cache breakpoints: the gateway
+                        // validates with a strict schema and answers non-standard
+                        // fields (like cache_control) with 400 Extra inputs are
+                        // not permitted. Direct Anthropic keeps the cached form.
+                        system = systemInstruction?.let { JsonPrimitive(it) },
+                        tools = tools.toRequestTools { it.toAnthropicTool() },
                     ),
                 )
             }

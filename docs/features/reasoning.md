@@ -37,7 +37,9 @@ Behavior of each provider when an `assistant`-role message with prior `tool_call
 
 Kai gates the field on `Service.reasoningRequestMode` (`NONE` or `REASONING_CONTENT`). When `REASONING_CONTENT` is set and the prior assistant turn carried `tool_calls`, Kai emits the field on the next request.
 
-Services currently set to `REASONING_CONTENT`: DeepSeek, OpenRouter, LongCat, Venice, Moonshot, Z.AI, Z.AI Coding Plan, MiniMax, Fireworks, OpenCode, OpenCode Go.
+Services currently set to `REASONING_CONTENT`: DeepSeek, OpenRouter, LongCat, Venice, Moonshot, Z.AI, Z.AI Coding Plan, MiniMax, Fireworks, OpenCode.
+
+OpenCode Go is deliberately excluded even though it serves the same model families: its gateway validates messages with a strict schema and answers any non-standard field (including `reasoning_content`) with 400 Extra inputs are not permitted, so the Go preset strips the field and the gateway Messages path likewise sends no `cache_control` breakpoints.
 
 All other services use the default `NONE` (the field is stripped on send). This is the safe default — any service we don't yet have evidence about will not regress.
 

@@ -489,7 +489,9 @@ sealed class Service(
         modelsUrl = "https://opencode.ai/zen/go/v1/models",
         apiKeyUrl = "https://opencode.ai/docs/go/",
         apiKeyUrlDisplay = "opencode.ai/docs/go",
-        reasoningRequestMode = ReasoningRequestMode.REASONING_CONTENT,
+        // Deliberately NOT ReasoningRequestMode.REASONING_CONTENT (unlike Zen): the Go
+        // gateway validates messages with a strict schema and answers any non-standard
+        // field (including reasoning_content) with 400 Extra inputs are not permitted.
     )
 
     data object PublicAI : Service(

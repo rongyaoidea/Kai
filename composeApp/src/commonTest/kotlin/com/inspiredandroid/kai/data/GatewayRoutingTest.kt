@@ -1,6 +1,7 @@
 package com.inspiredandroid.kai.data
 
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
@@ -89,5 +90,20 @@ class GatewayRoutingTest {
         assertTrue(requiresMessagesApi(Service.OpenCodeGo, "claude-sonnet-4-5"))
         assertFalse(requiresMessagesApi(Service.OpenCodeGo, "kimi-k2.6"))
         assertFalse(requiresMessagesApi(Service.OpenCodeGo, "grok-4.6"))
+    }
+
+    @Test
+    fun `only zen echoes reasoning content back`() {
+        // The Go gateway answers any non-standard message field (including
+        // reasoning_content) with 400 Extra inputs are not permitted, so the Go
+        // preset must not echo reasoning while Zen keeps requiring it.
+        assertEquals(
+            ReasoningRequestMode.REASONING_CONTENT,
+            Service.OpenCode.reasoningRequestMode,
+        )
+        assertEquals(
+            ReasoningRequestMode.NONE,
+            Service.OpenCodeGo.reasoningRequestMode,
+        )
     }
 }
