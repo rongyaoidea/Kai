@@ -129,9 +129,11 @@ class ToolExecutor(
         if (interactive && name in ToolApprovalPolicy.shellTools && isShellAutoApproved()) return true
         val gate = approvalGate ?: return true
         if (!interactive) return false
+        // Display-name lookup must never break approvals: fall back to the raw id.
+        val toolName = runCatching { getToolDisplayName(name) }.getOrDefault(name)
         return gate.awaitApproval(
             toolId = name,
-            toolName = getToolDisplayName(name),
+            toolName = toolName,
             reason = reason,
             detail = arguments.take(MAX_APPROVAL_DETAIL_LENGTH),
         )
