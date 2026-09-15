@@ -101,12 +101,11 @@ internal fun isOpenCodeGoUrl(url: String): Boolean = url.contains("/zen/go/", ig
  * OpenAI-Compatible instance points at an opencode.ai base URL (how Go is reached today).
  * No other provider is sent a session header.
  */
-internal fun sessionHeadersFor(service: Service, sessionId: String?, url: String = ""): Map<String, String> =
-    if (isOpenCodeEndpoint(service, url)) {
-        mapOf("x-opencode-session" to (sessionId?.takeIf { it.isNotBlank() } ?: processSessionId))
-    } else {
-        emptyMap()
-    }
+internal fun sessionHeadersFor(service: Service, sessionId: String?, url: String = ""): Map<String, String> = if (isOpenCodeEndpoint(service, url)) {
+    mapOf("x-opencode-session" to (sessionId?.takeIf { it.isNotBlank() } ?: processSessionId))
+} else {
+    emptyMap()
+}
 
 /**
  * OpenCode Zen's free-model pool gates on User-Agent, not on key or IP: only
