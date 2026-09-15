@@ -1,3 +1,10 @@
+## v3.7.0 — 2026-09-15
+
+### Features
+- OpenCode gateway routing: Zen serves GPT/Grok/Muse Spark on `/responses` and Claude/Qwen on `/messages`, Go additionally serves MiniMax on `/messages` — Kai now routes per model family automatically for the OpenCode service and OpenAI-Compatible instances pointed at opencode.ai (how Go is reached)
+- Gateway request headers on every shape: `x-opencode-session` on chat, Responses, Messages and model-list calls (previously missing on Responses/model-list); Zen keeps the official `opencode/<version>` User-Agent for the free-model pool while Go endpoints report Kai honestly per Go's client policy
+- Zen free models and Go models usable in-app: free `-free` ids through the built-in OpenCode service, Go via an OpenAI-Compatible service with base URL `https://opencode.ai/zen/go/v1`
+
 ## v3.6.1 — 2026-09-15
 
 ### Features
