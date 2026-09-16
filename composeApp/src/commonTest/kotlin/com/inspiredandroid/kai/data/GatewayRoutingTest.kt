@@ -90,7 +90,9 @@ class GatewayRoutingTest {
         assertTrue(requiresMessagesApi(Service.OpenCodeGo, "claude-sonnet-4-5"))
         assertFalse(requiresMessagesApi(Service.OpenCodeGo, "kimi-k2.6"))
         assertFalse(requiresMessagesApi(Service.OpenCodeGo, "grok-4.6"))
-        @Test
+    }
+
+    @Test
     fun `zen strict free models stay silent`() {
         for (model in ZEN_FREE_NO_ECHO_MODELS) {
             assertEquals(
@@ -109,7 +111,6 @@ class GatewayRoutingTest {
             reasoningModeFor(Service.OpenCode, "kimi-k2.6"),
         )
     }
-}
 
     @Test
     fun `only zen echoes reasoning content back`() {
