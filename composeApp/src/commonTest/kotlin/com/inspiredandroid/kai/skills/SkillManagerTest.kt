@@ -9,6 +9,35 @@ import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/**
+ * In-memory [SkillStore] standing in for the native tier
+ * (`kai-native/skills` on a real device).
+ */
+private class FakeNativeSkillStore : SkillStore {
+    val files = mutableMapOf<String, String>()
+
+    private fun prefix(folder: String) = "$folder/"
+
+    override suspend fun listFolders(): List<String> = files.keys.mapNotNull { path ->
+        if (!path.contains('/')) null else path.substringBefore('/')
+    }.distinct()
+
+    override suspend fun listFiles(folder: String): List<String> = files.keys
+        .filter { it.startsWith(prefix(folder)) }
+        .mapNotNull { it.removePrefix(prefix(folder)).takeIf { rest -> !rest.contains('/') } }
+
+    override suspend fun read(folder: String, name: String): String? = files["$folder/$name"]
+
+    override suspend fun write(folder: String, relativePath: String, content: String): Boolean {
+        files["$folder/$relativePath"] = content
+        return true
+    }
+
+    override suspend fun delete(folder: String) {
+        files.keys.filter { it.startsWith(prefix(folder)) }.forEach { files.remove(it) }
+    }
+}
+
 @OptIn(ExperimentalCoroutinesApi::class)
 class SkillManagerTest {
 
@@ -162,5 +191,86 @@ class SkillManagerTest {
         mgr.load()
 
         assertTrue(mgr.skills.value.any { it.id == "handmade" })
+    }
+
+    @Test
+    fun `without sandbox the native store backs prompt-only skills`() = runTest {
+        val native = FakeNativeSkillStore()
+        native.files["foo/SKILL.md"] = skillMd("foo", body = "Body of foo.")
+        native.files["foo/notes.txt"] = "bundled"
+        val mgr = SkillManager(
+            FakeSandboxController(installed = false),
+            nativeStore = native,
+            backgroundDispatcher = UnconfinedTestDispatcher(),
+        )
+
+        mgr.load()
+
+        val skill = mgr.getSkill("foo") ?: error("native skill missing")
+        assertEquals(SkillTier.NATIVE, skill.tier)
+        assertEquals(listOf("notes.txt"), skill.bundledFilePaths)
+        assertTrue(mgr.hasStorage())
+    }
+
+    @Test
+    fun `install writes to the native store when the sandbox is absent`() = runTest {
+        val native = FakeNativeSkillStore()
+        val mgr = SkillManager(
+            FakeSandboxController(installed = false),
+            nativeStore = native,
+            backgroundDispatcher = UnconfinedTestDispatcher(),
+        )
+
+        val result = mgr.install(DownloadedSkill("bar", "desc", skillMd("bar"), mapOf("a.txt" to "x")))
+
+        assertEquals("bar", result.id)
+        assertEquals(SkillTier.NATIVE, result.tier)
+        assertEquals("x", native.files["bar/a.txt"])
+    }
+
+    @Test
+    fun `sandbox copies win over native ones on id collision`() = runTest {
+        val native = FakeNativeSkillStore()
+        native.files["foo/SKILL.md"] = skillMd("foo", body = "Native body.")
+        val sandbox = FakeSandboxController()
+        sandbox.files["/root/skills/other-folder/SKILL.md"] = skillMd("foo", body = "Sandbox body.")
+        val mgr = SkillManager(sandbox, nativeStore = native, backgroundDispatcher = UnconfinedTestDispatcher())
+
+        mgr.load()
+
+        val skill = mgr.getSkill("foo") ?: error("skill missing")
+        assertEquals(SkillTier.SANDBOX, skill.tier)
+        assertEquals("Sandbox body.", skill.body.trim())
+    }
+
+    @Test
+    fun `no stores at all yields no skills`() = runTest {
+        val mgr = SkillManager(
+            FakeSandboxController(installed = false),
+            nativeStore = null,
+            backgroundDispatcher = UnconfinedTestDispatcher(),
+        )
+
+        mgr.load()
+
+        assertTrue(mgr.getInstalled().isEmpty())
+        assertTrue(!mgr.hasStorage())
+    }
+
+    @Test
+    fun `uninstall removes the folder from whichever store holds it`() = runTest {
+        val native = FakeNativeSkillStore()
+        native.files["bar/SKILL.md"] = skillMd("bar")
+        val mgr = SkillManager(
+            FakeSandboxController(installed = false),
+            nativeStore = native,
+            backgroundDispatcher = UnconfinedTestDispatcher(),
+        )
+        mgr.load()
+
+        mgr.uninstall("bar")
+
+        assertTrue(native.files.keys.none { it.startsWith("bar/") })
+        assertNull(mgr.getSkill("bar"))
     }
 }

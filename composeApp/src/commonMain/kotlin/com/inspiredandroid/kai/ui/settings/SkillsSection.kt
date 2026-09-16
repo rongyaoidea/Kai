@@ -60,12 +60,10 @@ import kai.composeapp.generated.resources.settings_skills_github_hint
 import kai.composeapp.generated.resources.settings_skills_github_url
 import kai.composeapp.generated.resources.settings_skills_install
 import kai.composeapp.generated.resources.settings_skills_installing
-import kai.composeapp.generated.resources.settings_skills_needs_sandbox
 import kai.composeapp.generated.resources.settings_skills_none
 import kai.composeapp.generated.resources.settings_skills_remove
 import kai.composeapp.generated.resources.settings_skills_search
 import kai.composeapp.generated.resources.settings_skills_search_empty
-import kai.composeapp.generated.resources.settings_skills_setup_sandbox
 import kotlinx.collections.immutable.ImmutableList
 import org.jetbrains.compose.resources.stringResource
 
@@ -100,49 +98,47 @@ internal fun SkillsSection(
 
         Spacer(Modifier.height(12.dp))
 
+        // Skills work in both tiers now: with the sandbox they run full commands;
+        // without it they degrade to prompt-only instructions in the native
+        // workspace. The note replaces the old hard gate, which hid the whole
+        // section until the sandbox was installed.
         if (!isSandboxInstalled) {
-            // Skills live in the Linux sandbox, so it must be installed first.
             Text(
-                text = stringResource(Res.string.settings_skills_needs_sandbox),
-                style = MaterialTheme.typography.bodyMedium,
+                text = "Native tier: skills are installed and followed as instructions. " +
+                    "Steps needing packages, python or ssh require the Linux sandbox.",
+                style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(8.dp))
-            OutlinedButton(
-                onClick = onNavigateToSandbox,
-                modifier = Modifier.align(Alignment.CenterHorizontally).handCursor(),
-            ) {
-                Text(stringResource(Res.string.settings_skills_setup_sandbox))
-            }
+        }
+
+        if (skills.isEmpty()) {
+            Text(
+                text = stringResource(Res.string.settings_skills_none),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         } else {
-            if (skills.isEmpty()) {
-                Text(
-                    text = stringResource(Res.string.settings_skills_none),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+            for (skill in skills) {
+                SkillCard(
+                    skill = skill,
+                    onRemove = { onUninstallSkill(skill.id) },
                 )
-            } else {
-                for (skill in skills) {
-                    SkillCard(
-                        skill = skill,
-                        onRemove = { onUninstallSkill(skill.id) },
-                    )
-                    Spacer(Modifier.height(8.dp))
-                }
+                Spacer(Modifier.height(8.dp))
             }
+        }
 
-            Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(8.dp))
 
-            OutlinedButton(
-                onClick = { onShowAddDialog(true) },
-                modifier = Modifier.align(Alignment.CenterHorizontally).handCursor(),
-            ) {
-                Text(stringResource(Res.string.settings_skills_add))
-            }
+        OutlinedButton(
+            onClick = { onShowAddDialog(true) },
+            modifier = Modifier.align(Alignment.CenterHorizontally).handCursor(),
+        ) {
+            Text(stringResource(Res.string.settings_skills_add))
         }
     }
 
-    if (showAddDialog && isSandboxInstalled) {
+    if (showAddDialog) {
         AddSkillDialog(
             onDismiss = { onShowAddDialog(false) },
             onInstallGitHub = onInstallGitHub,

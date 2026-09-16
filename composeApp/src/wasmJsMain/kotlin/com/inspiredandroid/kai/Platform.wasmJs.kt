@@ -47,6 +47,9 @@ actual val isSmsSupported: Boolean = false
 
 actual val isMcpAppUiSupported: Boolean = false
 
+/** No in-app preview; HTML opens in a browser tab. */
+actual val isHtmlPreviewSupported: Boolean = false
+
 actual val isNotificationsSupported: Boolean = false
 
 actual val isAutomationSupported: Boolean = false

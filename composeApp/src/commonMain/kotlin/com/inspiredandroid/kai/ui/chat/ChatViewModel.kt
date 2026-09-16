@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.inspiredandroid.kai.data.Conversation
 import com.inspiredandroid.kai.data.DataRepository
 import com.inspiredandroid.kai.data.FreeMode
+import com.inspiredandroid.kai.data.HtmlPreview
 import com.inspiredandroid.kai.data.Service
 import com.inspiredandroid.kai.data.ServiceEntry
 import com.inspiredandroid.kai.data.TaskScheduler
@@ -271,6 +272,7 @@ class ChatViewModel(
 
         // The previous turn's screenshot preview is stale once a new message goes out.
         ToolScreenshotPreview.clear()
+        HtmlPreview.clear()
 
         // Capture files before launching coroutine to avoid race with files being cleared
         val files = _state.value.files
@@ -665,6 +667,7 @@ class ChatViewModel(
         // No cancellation: a run in the previous conversation keeps going in the
         // background and stays reachable through the history list.
         ToolScreenshotPreview.clear()
+        HtmlPreview.clear()
         dataRepository.startNewChat()
         dataRepository.setInteractiveMode(false)
         _state.update {

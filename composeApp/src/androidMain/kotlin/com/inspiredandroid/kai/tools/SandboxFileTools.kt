@@ -16,43 +16,47 @@ private const val READ_MAX_BYTES = 256 * 1024
 private const val WRITE_MAX_BYTES = 1024 * 1024
 
 /**
- * Direct file reads and writes inside the Linux sandbox (`/root`), Android-only.
+ * Direct file reads and writes for the agent's workspace, Android-only.
  *
  * The shell tool can already move bytes with cat/heredoc/sed, but precise work
  * through a shell mangles quoting and truncates silently. These two tools are
  * the exact path: paginated reads that refuse binaries loudly, and writes with
- * create/overwrite/append modes that never touch anything outside `/root`.
+ * create/overwrite/append modes that never touch anything outside the home.
+ *
+ * Tiered like the shell: with the Linux sandbox Ready the home is `/root`
+ * inside the rootfs; without it the home is the app-private native workspace
+ * the native shell starts in. Relative paths mean the same file for the shell
+ * and the file tools in either tier.
  */
 object SandboxFileTools {
     private val sandboxManager: LinuxSandboxManager by inject(LinuxSandboxManager::class.java)
 
-    private fun sandboxReady(): Map<String, Any>? = if (sandboxManager.state.value !is SandboxState.Ready) {
-        mapOf("success" to false, "error" to "Linux sandbox is not installed. Set it up in Settings > Tools.")
-    } else {
-        null
-    }
+    private val isProotReady: Boolean get() = sandboxManager.state.value is SandboxState.Ready
+
+    /** Home directory of the active tier. */
+    private fun activeHome(): String = if (isProotReady) sandboxManager.homePath else sandboxManager.nativeHome.absolutePath
 
     val readFileTool = object : Tool {
         override val schema = ToolSchema(
             name = "read_file",
-            description = "Read a text file from the Linux sandbox and return its lines with pagination. " +
+            description = "Read a text file from the workspace and return its lines with pagination. " +
                 "Prefer this over cat/head/sed for reading: it pages large files, caps output, and refuses " +
                 "binaries with a clear error instead of dumping garbage. " +
-                "Path is relative to /root (e.g. notes.md, site/index.html). " +
+                "Path is relative to the workspace home (with the Linux sandbox that is /root; without it, " +
+                "the native workspace the shell starts in). " +
                 "For binary or media files use open_file instead.",
             parameters = mapOf(
-                "path" to ParameterSchema("string", "Path relative to /root", true),
+                "path" to ParameterSchema("string", "Path relative to the workspace home", true),
                 "offset" to ParameterSchema("integer", "First line to return, 0-based (default 0)", false),
                 "limit" to ParameterSchema("integer", "Max lines to return (default 200, max 1000)", false),
             ),
         )
 
         override suspend fun execute(args: Map<String, Any>): Any {
-            sandboxReady()?.let { return it }
             val path = (args["path"] as? String)?.trim()
                 ?: return mapOf("success" to false, "error" to "path is required")
-            val file = resolveSandboxFile(sandboxManager.homePath, path)
-                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to /root, no leading / or .. segments")
+            val file = resolveSandboxFile(activeHome(), path)
+                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no leading / or .. segments")
             if (!file.exists()) {
                 return mapOf("success" to false, "error" to "File not found: $path")
             }
@@ -94,22 +98,22 @@ object SandboxFileTools {
     val writeFileTool = object : Tool {
         override val schema = ToolSchema(
             name = "write_file",
-            description = "Write exact text to a file in the Linux sandbox. " +
+            description = "Write exact text to a file in the workspace. " +
                 "Prefer this over heredoc/echo/sed for precise writes: no shell-quoting mangling, " +
-                "no accidental truncation. Path is relative to /root; parent directories are created. " +
-                "Modes: overwrite (default), append, create (fails if the file already exists). " +
+                "no accidental truncation. Path is relative to the workspace home (with the Linux sandbox " +
+                "that is /root; without it, the native workspace the shell starts in); parent directories " +
+                "are created. Modes: overwrite (default), append, create (fails if the file already exists). " +
                 "Read the file first with read_file when editing existing content. " +
                 "Do not write under skills/ by hand — use install_skill so frontmatter validation, " +
                 "size caps, and the skill cache stay consistent.",
             parameters = mapOf(
-                "path" to ParameterSchema("string", "Path relative to /root", true),
+                "path" to ParameterSchema("string", "Path relative to the workspace home", true),
                 "content" to ParameterSchema("string", "Exact text to write", true),
                 "mode" to ParameterSchema("string", "One of: overwrite (default), append, create", false),
             ),
         )
 
         override suspend fun execute(args: Map<String, Any>): Any {
-            sandboxReady()?.let { return it }
             val path = (args["path"] as? String)?.trim()
                 ?: return mapOf("success" to false, "error" to "path is required")
             val content = args["content"]?.toString()
@@ -117,8 +121,8 @@ object SandboxFileTools {
             if (content.toByteArray().size > WRITE_MAX_BYTES) {
                 return mapOf("success" to false, "error" to "Content exceeds the $WRITE_MAX_BYTES-byte write cap")
             }
-            val file = resolveSandboxFile(sandboxManager.homePath, path)
-                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to /root, no leading / or .. segments")
+            val file = resolveSandboxFile(activeHome(), path)
+                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no leading / or .. segments")
             val mode = ((args["mode"] as? String)?.lowercase() ?: "overwrite")
             if (mode != "overwrite" && mode != "append" && mode != "create") {
                 return mapOf("success" to false, "error" to "mode must be overwrite|append|create")
@@ -148,19 +152,20 @@ object SandboxFileTools {
     val readFileToolInfo = ToolInfo(
         id = "read_file",
         name = "Read File",
-        description = "Read a text file from the Linux sandbox with pagination",
+        description = "Read a text file from the workspace with pagination",
         nameRes = null,
         descriptionRes = null,
         isEnabled = false,
-        // Availability follows the sandbox being Ready, same as the shell tool,
-        // so a per-tool switch would read back a setting nothing consults.
+        // Availability follows the workspace tier (sandbox or native), same as
+        // the shell tool, so a per-tool switch would read back a setting
+        // nothing consults.
         userToggleable = false,
     )
 
     val writeFileToolInfo = ToolInfo(
         id = "write_file",
         name = "Write File",
-        description = "Write exact text to a file in the Linux sandbox",
+        description = "Write exact text to a file in the workspace",
         nameRes = null,
         descriptionRes = null,
         isEnabled = false,

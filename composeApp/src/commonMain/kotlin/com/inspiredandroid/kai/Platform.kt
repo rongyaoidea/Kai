@@ -78,6 +78,14 @@ expect val isNotificationsSupported: Boolean
 expect val isMcpAppUiSupported: Boolean
 
 /**
+ * True only on Android, where an HTML report written to the workspace can be
+ * previewed in-app (full-screen WebView) instead of being handed to another
+ * app. When false, `open_file` with a preview request falls back to opening
+ * the file externally.
+ */
+expect val isHtmlPreviewSupported: Boolean
+
+/**
  * Cross-app automation (AccessibilityService + Shizuku) is Android-only.
  * Everywhere else this is false and the automation settings section stays hidden.
  */

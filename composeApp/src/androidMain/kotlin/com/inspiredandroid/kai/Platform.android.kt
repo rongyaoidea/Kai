@@ -103,6 +103,9 @@ actual val isSmsSupported: Boolean by lazy {
 // service. Foss flavor declares it, playStore does not.
 actual val isMcpAppUiSupported: Boolean = true
 
+/** HTML reports preview in the locked-down WebView host (HtmlPreviewDialog). */
+actual val isHtmlPreviewSupported: Boolean = true
+
 actual val isNotificationsSupported: Boolean by lazy {
     try {
         val context: Context by inject(Context::class.java)
@@ -326,15 +329,15 @@ actual fun getAvailableTools(): List<Tool> {
             // internally, so they are always advertised under this toggle.
             add(ShellCommandTool)
             add(ProcessManagerTool)
-            // Everything else needs the real rootfs: file tools address /root,
-            // ssh_configure_host writes ~/.ssh/config, skills live in ~/skills/.
+            // File tools are tiered like the shell: /root with the full sandbox,
+            // the native workspace without it. ssh_configure_host still needs
+            // the real rootfs. Skill management works in both tiers (sandbox
+            // folders when Ready, the native workspace otherwise).
+            add(SandboxFileTools.readFileTool)
+            add(SandboxFileTools.writeFileTool)
             if (sandboxManager.state.value is SandboxState.Ready) {
                 add(SshConfigureHostTool)
-                add(SandboxFileTools.readFileTool)
-                add(SandboxFileTools.writeFileTool)
             }
-            // Skill management rides the sandbox being Ready (skills are folders in
-            // ~/skills/); each tool still keeps its own Tools-tab switch.
             addAll(SkillAdminTools.getTools())
         }
 

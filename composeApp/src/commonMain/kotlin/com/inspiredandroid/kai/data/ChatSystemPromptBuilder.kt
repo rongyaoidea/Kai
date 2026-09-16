@@ -9,6 +9,7 @@
 package com.inspiredandroid.kai.data
 
 import com.inspiredandroid.kai.skills.SkillManifest
+import com.inspiredandroid.kai.skills.SkillTier
 import com.inspiredandroid.kai.tools.UntrustedToolOutput
 import kotlin.time.Instant
 
@@ -322,8 +323,10 @@ internal fun buildChatSystemPrompt(
  * message with `/skill-id`, so the body stays out of the prompt on every other
  * turn — matches the lean-prompt rule of "disabled features add zero bytes."
  *
- * On Android, the skill's bundled files live at `~/skills/<id>/` inside the
- * Linux sandbox, accessible via the existing `execute_shell_command` tool.
+ * Path hints follow the skill's [SkillManifest.tier]: sandbox skills point at
+ * `~/skills/<id>/` inside the Linux sandbox, native-tier skills at
+ * `skills/<id>/` relative to the shell's working directory. Native-tier skills
+ * get a capability note so the model doesn't burn turns on apt/python/ssh.
  */
 private fun StringBuilder.appendActiveSkillSection(skill: SkillManifest) {
     append("\n\n## Active skill: ")
@@ -331,14 +334,28 @@ private fun StringBuilder.appendActiveSkillSection(skill: SkillManifest) {
     append('\n')
     append(skill.body.trim())
     if (skill.bundledFilePaths.isNotEmpty()) {
-        append("\n\nBundled files (available at `~/skills/")
-        append(skill.id)
-        append("/` in the Linux sandbox):\n")
+        when (skill.tier) {
+            SkillTier.SANDBOX -> {
+                append("\n\nBundled files (available at `~/skills/")
+                append(skill.id)
+                append("/` in the Linux sandbox):\n")
+            }
+
+            SkillTier.NATIVE -> {
+                append("\n\nBundled files (available at `skills/")
+                append(skill.id)
+                append("/` relative to the shell working directory — read them with read_file):\n")
+            }
+        }
         for (path in skill.bundledFilePaths.sorted()) {
             append("- ")
             append(path)
             append('\n')
         }
+    }
+    if (skill.tier == SkillTier.NATIVE) {
+        append("\nThe Linux sandbox is not installed, so this skill runs in the limited native tier: ")
+        append("steps needing packages (apt/apk), python, git or ssh are unavailable. Use the shell applets and the file tools for what the instructions ask for.\n")
     }
 }
 

@@ -5,18 +5,18 @@ import com.inspiredandroid.kai.network.tools.ParameterSchema
 import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.network.tools.ToolInfo
 import com.inspiredandroid.kai.network.tools.ToolSchema
-import com.inspiredandroid.kai.sandbox.LinuxSandboxManager
-import com.inspiredandroid.kai.sandbox.SandboxState
 import com.inspiredandroid.kai.skills.SkillManager
 import com.inspiredandroid.kai.skills.SkillSource
 import com.inspiredandroid.kai.skills.parseSkillInstallInput
 import org.koin.java.KoinJavaComponent.inject
 
 /**
- * Lets the agent install and remove skills itself. Skills are sandbox folders
- * (`~/skills/<id>/`), so these exist on Android only and only while the
- * sandbox is Ready; installed skills appear in Settings → Tools → Skills with
- * no extra step.
+ * Lets the agent install and remove skills itself. Skills are folders in the
+ * Linux sandbox (`~/skills/<id>/`) when it is installed, or in the app-private
+ * native workspace (`kai-native/skills/<id>/`) otherwise — so these tools exist
+ * whenever any skill home does, and installed skills appear in Settings →
+ * Tools → Skills with no extra step. Without the sandbox the system degrades
+ * to prompt-only skills; the SKILL.md files are still installed and followed.
  *
  * Installing pulls the `SKILL.md` (plus sibling text files for GitHub sources)
  * through the same path the UI uses, so validation, size caps, and built-in
@@ -24,13 +24,10 @@ import org.koin.java.KoinJavaComponent.inject
  */
 object SkillAdminTools {
     private val skillManager: SkillManager by inject(SkillManager::class.java)
-    private val sandboxManager: LinuxSandboxManager by inject(LinuxSandboxManager::class.java)
     private val appSettings: AppSettings by inject(AppSettings::class.java)
 
-    private fun sandboxReady(): Boolean = sandboxManager.state.value is SandboxState.Ready
-
     fun getTools(): List<Tool> {
-        if (!sandboxReady()) return emptyList()
+        if (!skillManager.hasStorage()) return emptyList()
         return buildList {
             if (appSettings.isToolEnabled("list_skills")) add(listSkillsTool)
             // A skill is instruction text the agent then follows, fetched from a host the
@@ -41,10 +38,19 @@ object SkillAdminTools {
         }
     }
 
+    /**
+     * Path hint for the active tier: sandbox skills live under `/root/skills`,
+     * native-tier ones under the shell working directory. `skills/<id>/...` is
+     * correct for both when read through `read_file` — the sandbox file tools
+     * take paths relative to `/root`, the native file tools relative to their
+     * home, and both are the same home the skills store uses.
+     */
+    private fun skillFileHint(id: String): String = "skills/$id/SKILL.md"
+
     val listSkillsTool = object : Tool {
         override val schema = ToolSchema(
             name = "list_skills",
-            description = "List installed skills with their id, description, and whether each is built in. The user invokes a skill by starting a message with /<id>; you yourself follow a skill by reading its instructions at ~/skills/<id>/SKILL.md via execute_shell_command (bundled files are listed as files). Call this before installing so you reuse ids instead of creating duplicates.",
+            description = "List installed skills with their id, description, and whether each is built in. The user invokes a skill by starting a message with /<id>; you yourself follow a skill by reading its instructions with read_file at skills/<id>/SKILL.md (bundled files are listed as files). Call this before installing so you reuse ids instead of creating duplicates.",
             parameters = emptyMap(),
         )
 
@@ -56,6 +62,7 @@ object SkillAdminTools {
                     "display_name" to it.displayName,
                     "description" to it.description,
                     "built_in" to it.isBuiltIn,
+                    "tier" to it.tier.name.lowercase(),
                     "files" to it.bundledFilePaths,
                 )
             },
@@ -65,7 +72,7 @@ object SkillAdminTools {
     val installSkillTool = object : Tool {
         override val schema = ToolSchema(
             name = "install_skill",
-            description = "Install a skill into the sandbox. Give exactly one of: github (owner/repo, a GitHub URL, or a tree path to a subfolder containing SKILL.md, e.g. anthropics/skills or anthropics/skills/tree/main/skills/pdf), url (a direct https link to a SKILL.md file on any host), or content (the full pasted SKILL.md text). GitHub installs include sibling files; url/content installs are single-file. Use this instead of cloning into ~/skills by hand — a manual copy skips validation and stays invisible until the skill list reloads. Reinstalling the same id replaces it. After installing, read ~/skills/<id>/SKILL.md to follow its instructions, and tell the user what you installed — it shows up in Settings → Tools → Skills and the user invokes it with /<id>.",
+            description = "Install a skill (stored in the Linux sandbox when installed, otherwise in Kai's native workspace — no sandbox required). Give exactly one of: github (owner/repo, a GitHub URL, or a tree path to a subfolder containing SKILL.md, e.g. anthropics/skills or anthropics/skills/tree/main/skills/pdf), url (a direct https link to a SKILL.md file on any host), or content (the full pasted SKILL.md text). GitHub installs include sibling files; url/content installs are single-file. Use this instead of writing skills/<id>/SKILL.md by hand — a manual copy skips validation and stays invisible until the skill list reloads. Reinstalling the same id replaces it. After installing, read skills/<id>/SKILL.md with read_file to follow its instructions, and tell the user what you installed — it shows up in Settings → Tools → Skills and the user invokes it with /<id>.",
             parameters = mapOf(
                 "github" to ParameterSchema("string", "owner/repo, a GitHub URL, or a tree path to the skill folder", false),
                 "url" to ParameterSchema("string", "Direct https link to a SKILL.md file on any host", false),
@@ -74,8 +81,8 @@ object SkillAdminTools {
         )
 
         override suspend fun execute(args: Map<String, Any>): Any {
-            if (!sandboxReady()) {
-                return mapOf("success" to false, "error" to "Linux sandbox is not installed. Set it up in Settings > Tools.")
+            if (!skillManager.hasStorage()) {
+                return mapOf("success" to false, "error" to "No skill storage available on this device.")
             }
             val source = parseSkillInstallInput(
                 github = args["github"]?.toString(),
@@ -97,7 +104,8 @@ object SkillAdminTools {
                         put("display_name", skill.displayName)
                         put("description", skill.description)
                         put("invoke", "/${skill.id}")
-                        put("skill_file", "~/skills/${skill.id}/SKILL.md")
+                        put("skill_file", skillFileHint(skill.id))
+                        put("tier", skill.tier.name.lowercase())
                         if (skillManager.lastInstallWasIncomplete) {
                             put("warning", "Installed SKILL.md but the file listing failed (rate limit or network), so bundled files may be missing. Retry the install later to complete it.")
                         }
@@ -120,8 +128,8 @@ object SkillAdminTools {
         )
 
         override suspend fun execute(args: Map<String, Any>): Any {
-            if (!sandboxReady()) {
-                return mapOf("success" to false, "error" to "Linux sandbox is not installed. Set it up in Settings > Tools.")
+            if (!skillManager.hasStorage()) {
+                return mapOf("success" to false, "error" to "No skill storage available on this device.")
             }
             val id = args["skill_id"]?.toString()?.trim().orEmpty()
             if (id.isEmpty()) return mapOf("success" to false, "error" to "skill_id is required")

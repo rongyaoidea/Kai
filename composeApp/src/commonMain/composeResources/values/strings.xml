@@ -84,7 +84,7 @@
     <string name="tool_set_alarm_name">Set Alarm</string>
     <string name="tool_set_alarm_description">Set an alarm or countdown timer on the device</string>
     <string name="tool_open_file_name">Open File</string>
-    <string name="tool_open_file_description">Open sandbox files in your default Android app</string>
+    <string name="tool_open_file_description">Open workspace files in your default Android app</string>
     <string name="tool_browse_page_name">Browse Page</string>
     <string name="tool_browse_page_description">Render pages with headless Chromium</string>
     <string name="tool_execute_shell_command_name">Execute Shell Command</string>

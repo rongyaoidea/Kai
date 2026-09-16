@@ -1,7 +1,6 @@
 package com.inspiredandroid.kai.skills
 
 import com.inspiredandroid.kai.SandboxController
-import com.inspiredandroid.kai.TextFileResult
 import com.inspiredandroid.kai.getBackgroundDispatcher
 import kai.composeapp.generated.resources.Res
 import kotlinx.coroutines.CoroutineScope
@@ -14,20 +13,22 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
 
 /**
- * Manages the user's skills. Most skills live in the Linux sandbox at `~/skills/<id>/`
- * (each is a folder containing `SKILL.md` plus any bundled files); a small set of
- * "built-in" skills ships inside the app as compose resources and is merged into the
- * same in-memory cache so synchronous callers ([getInstalled], [getSkill]) stay cheap.
- * On id collision the sandbox copy wins, so users can override a built-in.
+ * Manages the user's skills. Skill folders live in one of two homes: the Linux
+ * sandbox at `~/skills/<id>/` when it is installed, or the app-private native
+ * workspace at `kai-native/skills/<id>/` when it is not (Android only). Both are
+ * read whenever available, with sandbox copies winning on id collision; a small
+ * set of "built-in" skills ships inside the app as compose resources and fills
+ * any remaining gaps. Without a sandbox the system degrades to prompt-only
+ * skills — bodies still steer the model, but steps needing packages, python or
+ * ssh cannot run.
  *
  * The cache is (re)loaded after every install/uninstall and whenever the sandbox
- * becomes installed — built-ins are loaded then too, gated on sandbox availability
- * because they only make sense when their `execute_shell_command` writes can land.
- * On platforms without a sandbox the file ops are no-ops and `load()` never runs, so
- * no skills (built-in or otherwise) appear off-Android.
+ * installed state flips. On platforms with no store at all (desktop, iOS, web)
+ * `load()` yields an empty list, keeping the feature Android-only.
  */
 class SkillManager(
     private val sandboxController: SandboxController,
+    private val nativeStore: SkillStore? = createNativeSkillStore(),
     private val registry: SkillRegistry = SkillRegistry(),
     backgroundDispatcher: CoroutineContext = getBackgroundDispatcher(),
 ) {
@@ -47,16 +48,15 @@ class SkillManager(
         private set
 
     init {
-        // Load once the sandbox is installed (the file ops resolve real paths only
-        // then); the StateFlow re-emits when it flips, so reset/install refresh too.
-        // Clearing on uninstall keeps getInstalled() from serving stale entries
-        // while the sandbox is gone.
+        // Reload when the sandbox installed state flips (which store is active
+        // changes). Intermediate install-progress emissions don't reload.
         scope.launch {
-            var wasInstalled = false
+            var lastInstalled: Boolean? = null
             sandboxController.status.collect { status ->
-                if (status.installed && !wasInstalled) load()
-                if (!status.installed && wasInstalled) _skills.value = emptyList()
-                wasInstalled = status.installed
+                if (lastInstalled != status.installed) {
+                    lastInstalled = status.installed
+                    load()
+                }
             }
         }
     }
@@ -67,23 +67,37 @@ class SkillManager(
     // case-insensitively, so lookups (including uninstall) do too.
     fun getSkill(id: String): SkillManifest? = _skills.value.firstOrNull { it.id.equals(id, ignoreCase = true) }
 
+    /** True when at least one home can store skills (sandbox or native workspace). */
+    fun hasStorage(): Boolean = nativeStore != null || sandboxController.status.value.installed
+
+    /** Active homes in priority order: sandbox first (when installed), native last. */
+    private fun activeStores(): List<Pair<SkillStore, SkillTier>> = buildList {
+        if (sandboxController.status.value.installed) {
+            add(SandboxSkillStore(sandboxController) to SkillTier.SANDBOX)
+        }
+        nativeStore?.let { add(it to SkillTier.NATIVE) }
+    }
+
     suspend fun uninstall(id: String) {
         val manifest = getSkill(id)
         // Folders are normally named after the frontmatter id, but a folder the
         // agent wrote by hand may carry a different directory name — delete the
         // directory whose SKILL.md actually parses to this id, not a blind path.
         val dirName = manifest?.let { findDirectoryForSkill(it.id) } ?: id.lowercase()
-        sandboxController.deleteEntry("$SKILLS_DIR/$dirName", recursive = true)
+        for ((store, _) in activeStores()) {
+            if (store.listFolders().any { it == dirName }) store.delete(dirName)
+        }
         load()
     }
 
-    /** Directory under [SKILLS_DIR] whose SKILL.md parses to [skillId], if any. */
+    /** Directory name whose SKILL.md parses to [skillId], if any, across the active homes. */
     private suspend fun findDirectoryForSkill(skillId: String): String? {
-        for (dir in sandboxController.listDirectory(SKILLS_DIR).filter { it.isDirectory }) {
-            val md = (sandboxController.readTextFile("$SKILLS_DIR/${dir.name}/SKILL.md") as? TextFileResult.Text)
-                ?.content ?: continue
-            val parsed = SkillFrontmatterParser.parse(md) as? SkillFrontmatterParser.Result.Ok ?: continue
-            if (parsed.id.equals(skillId, ignoreCase = true)) return dir.name
+        for ((store, _) in activeStores()) {
+            for (dir in store.listFolders()) {
+                val parsed = (store.read(dir, "SKILL.md"))?.let { SkillFrontmatterParser.parse(it) } as? SkillFrontmatterParser.Result.Ok
+                    ?: continue
+                if (parsed.id.equals(skillId, ignoreCase = true)) return dir
+            }
         }
         return null
     }
@@ -102,60 +116,73 @@ class SkillManager(
     /** Browses the curated marketplaces and returns the combined, searchable list. */
     suspend fun browseMarketplaces(): Result<List<RegistrySkillEntry>> = registry.browseMarketplaces(curatedSkillMarketplaces)
 
-    /** Writes a downloaded skill into `~/skills/<id>/`, replacing any existing copy, then reloads. */
+    /**
+     * Writes a downloaded skill into the preferred home (sandbox when installed,
+     * the native workspace otherwise), replacing any existing copy, then reloads.
+     */
     internal suspend fun install(downloaded: DownloadedSkill): SkillManifest {
         lastInstallWasIncomplete = downloaded.incomplete
-        val base = "$SKILLS_DIR/${downloaded.id}"
-        sandboxController.deleteEntry(base, recursive = true) // replace if present
-        sandboxController.writeTextFile("$base/SKILL.md", downloaded.rawSkillMd)
+        val (store, _) = activeStores().firstOrNull()
+            ?: error("No skill storage available on this device")
+        store.delete(downloaded.id) // replace if present
+        store.write(downloaded.id, "SKILL.md", downloaded.rawSkillMd)
         for ((relPath, content) in downloaded.files) {
             val safe = relPath.split('/', '\\').filterNot { it.isEmpty() || it == ".." }
             if (safe.isEmpty()) continue
-            sandboxController.writeTextFile("$base/${safe.joinToString("/")}", content)
+            store.write(downloaded.id, safe.joinToString("/"), content)
         }
         load()
         return getSkill(downloaded.id) ?: error("Skill '${downloaded.id}' not found after install")
     }
 
-    /** Reads every `~/skills/<id>/` folder back into the in-memory cache. */
+    /**
+     * Reads every skill folder from the active homes back into the in-memory
+     * cache. Lower-priority homes are read first so sandbox copies overwrite
+     * native ones on id collision, and built-ins fill any remaining gaps.
+     * No store (desktop/iOS/web) yields an empty list.
+     */
     suspend fun load() {
         val skills = mutex.withLock {
-            val sandboxSkills = sandboxController.listDirectory(SKILLS_DIR)
-                .filter { it.isDirectory }
-                .mapNotNull { dir ->
-                    val base = "$SKILLS_DIR/${dir.name}"
-                    val md = (sandboxController.readTextFile("$base/SKILL.md") as? TextFileResult.Text)
-                        ?.content ?: return@mapNotNull null
-                    val parsed = SkillFrontmatterParser.parse(md) as? SkillFrontmatterParser.Result.Ok
-                        ?: return@mapNotNull null
-                    val files = sandboxController.listDirectory(base)
-                        .filter { !it.isDirectory && it.name != "SKILL.md" }
-                        .map { it.name }
-                        .sorted()
-                    SkillManifest(
-                        id = parsed.id,
-                        displayName = SkillFrontmatterParser.displayName(parsed.id),
-                        description = parsed.description,
-                        body = parsed.body,
-                        bundledFilePaths = files,
-                    )
+            val sources = activeStores()
+            if (sources.isEmpty()) return@withLock emptyList<SkillManifest>()
+            val byId = LinkedHashMap<String, SkillManifest>()
+            for ((store, tier) in sources.asReversed()) {
+                for (skill in readStore(store, tier)) {
+                    byId[skill.id] = skill
                 }
-            // Sandbox-installed skills win on id collision so power users can override a built-in.
-            val sandboxIds = sandboxSkills.mapTo(mutableSetOf()) { it.id }
-            val builtIns = loadBuiltInSkills().filter { it.id !in sandboxIds }
-            (builtIns + sandboxSkills).sortedBy { it.id }
+            }
+            for (builtIn in loadBuiltInSkills(sources.first().second)) {
+                byId.putIfAbsent(builtIn.id, builtIn)
+            }
+            byId.values.sortedBy { it.id }
         }
         _skills.value = skills
     }
 
+    private suspend fun readStore(store: SkillStore, tier: SkillTier): List<SkillManifest> = store.listFolders().mapNotNull { folder ->
+        val md = store.read(folder, "SKILL.md") ?: return@mapNotNull null
+        val parsed = SkillFrontmatterParser.parse(md) as? SkillFrontmatterParser.Result.Ok
+            ?: return@mapNotNull null
+        val files = store.listFiles(folder).filter { it != "SKILL.md" }.sorted()
+        SkillManifest(
+            id = parsed.id,
+            displayName = SkillFrontmatterParser.displayName(parsed.id),
+            description = parsed.description,
+            body = parsed.body,
+            bundledFilePaths = files,
+            tier = tier,
+        )
+    }
+
     /**
      * Reads bundled SKILL.md files shipped in compose resources. They appear alongside
-     * sandbox-installed skills, can be invoked as `/<id>` from chat, and cannot be
-     * uninstalled. Updates flow with each app release — nothing is persisted to the
-     * sandbox. A built-in whose resource read or frontmatter parse fails is silently
-     * dropped (no user-facing failure for a missing/broken bundled asset).
+     * installed skills, can be invoked as `/<id>` from chat, and cannot be uninstalled.
+     * Updates flow with each app release — nothing is persisted to a store. A built-in
+     * whose resource read or frontmatter parse fails is silently dropped (no user-facing
+     * failure for a missing/broken bundled asset). [tier] is the highest-priority active
+     * home, so path hints in the prompt point where the model can actually read files.
      */
-    private suspend fun loadBuiltInSkills(): List<SkillManifest> = BUILT_IN_SKILL_IDS.mapNotNull { id ->
+    private suspend fun loadBuiltInSkills(tier: SkillTier): List<SkillManifest> = BUILT_IN_SKILL_IDS.mapNotNull { id ->
         val bytes = runCatching { Res.readBytes("files/skills/$id/SKILL.md") }.getOrNull()
             ?: return@mapNotNull null
         val parsed = SkillFrontmatterParser.parse(bytes.decodeToString()) as? SkillFrontmatterParser.Result.Ok
@@ -166,6 +193,7 @@ class SkillManager(
             description = parsed.description,
             body = parsed.body,
             isBuiltIn = true,
+            tier = tier,
         )
     }
 

@@ -205,6 +205,8 @@ private fun nativeToolDescription(homeDir: String): String = """Execute a shell 
 
 Shell session is PERSISTENT across calls within THIS conversation: cwd and exported variables carry over, other chats stay isolated. Home is the app-private directory `$homeDir` — start there; `working_dir` may be relative (to home) or absolute.
 
+Discover the exact applet set on this device by running `toybox` with no arguments — that lists every command available; don't guess at ones from the list above. Files you create live in the same workspace the `read_file`/`write_file` tools use, so paths are interchangeable between the shell and the file tools.
+
 NOT available in this tier — do not attempt, all will fail:
 - No apt/apk, no package installs of any kind.
 - No python/node/git/curl/wget/ssh/scp — those arrive with the Linux sandbox.

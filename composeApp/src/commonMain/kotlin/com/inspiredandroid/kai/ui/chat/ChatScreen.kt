@@ -79,6 +79,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.inspiredandroid.kai.BackIcon
 import com.inspiredandroid.kai.TerminalLine
+import com.inspiredandroid.kai.data.HtmlPreview
 import com.inspiredandroid.kai.data.Service
 import com.inspiredandroid.kai.data.ToolScreenshotPreview
 import com.inspiredandroid.kai.data.supportsAgenticFlows
@@ -92,6 +93,7 @@ import com.inspiredandroid.kai.ui.chat.composables.EmptyState
 import com.inspiredandroid.kai.ui.chat.composables.ErrorMessage
 import com.inspiredandroid.kai.ui.chat.composables.FreeProviderSuggestionsPanel
 import com.inspiredandroid.kai.ui.chat.composables.HeartbeatFab
+import com.inspiredandroid.kai.ui.chat.composables.HtmlPreviewCard
 import com.inspiredandroid.kai.ui.chat.composables.PendingSmsBanners
 import com.inspiredandroid.kai.ui.chat.composables.QuestionInput
 import com.inspiredandroid.kai.ui.chat.composables.ServiceSelector
@@ -520,6 +522,12 @@ private fun ChatModeScreen(
 ) {
     var showHistorySheet by remember { mutableStateOf(false) }
     var isSandboxOpen by rememberSaveable { mutableStateOf(initialSandboxOpen) }
+    // HTML report preview published by open_file(preview=true), scoped to this
+    // conversation. Rendered as a card just above the composer area.
+    val htmlPreview by HtmlPreview.latest.collectAsStateWithLifecycle()
+    val activeHtmlPreview = htmlPreview
+        ?.takeIf { it.conversationId == null || it.conversationId == uiState.currentConversationId }
+    var showHtmlPreviewDialog by remember { mutableStateOf(false) }
     // Hoisted here so the draft survives toggling the sandbox/terminal view, which
     // removes QuestionInput from composition and would otherwise drop the text.
     var questionInputText by rememberSaveable(stateSaver = TextFieldValue.Saver) {
@@ -934,6 +942,16 @@ private fun ChatModeScreen(
                                             ToolScreenshotPreviewCard(image)
                                         }
                                     }
+                                    // Latest HTML report preview (open_file preview=true),
+                                    // inline like the screenshot card.
+                                    activeHtmlPreview?.let { preview ->
+                                        item(key = "html-preview") {
+                                            HtmlPreviewCard(
+                                                preview = preview,
+                                                onOpen = { showHtmlPreviewDialog = true },
+                                            )
+                                        }
+                                    }
                                     // Skip the generic "thinking" row during a pending kai-ui submission — the
                                     // pressed button's pulse already signals work in flight. Keep it for tool
                                     // activity so tool feedback isn't lost.
@@ -1037,6 +1055,15 @@ private fun ChatModeScreen(
             actions = uiState.actions,
             onDismiss = { showHistorySheet = false },
             onConversationSelected = { isSandboxOpen = false },
+        )
+    }
+
+    val preview = activeHtmlPreview
+    if (showHtmlPreviewDialog && preview != null) {
+        HtmlPreviewDialog(
+            title = preview.title,
+            html = preview.html,
+            onDismiss = { showHtmlPreviewDialog = false },
         )
     }
 }
