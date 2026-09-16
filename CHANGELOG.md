@@ -1,3 +1,10 @@
+## v3.9.1 — 2026-09-16
+
+### Fixes
+- Native tier: `read_file`, `write_file` and `open_file` accept `/root/...` and `~/...` prefixes and resolve them against the active workspace home, so skill instructions and model priors that use sandbox paths keep working without the sandbox
+- The `create-skill` built-in installs through `install_skill` with pasted content instead of shell heredocs (which required the sandbox); the `report` built-in uses workspace-relative paths and falls back to a self-contained HTML report when the sandbox is absent
+- The HTML report preview card is no longer cleared when the user keeps chatting — it stays in the conversation (a new chat still clears it)
+
 ## v3.9.0 — 2026-09-16
 
 ### Features
