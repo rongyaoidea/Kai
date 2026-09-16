@@ -271,8 +271,9 @@ class ChatViewModel(
         if (dataRepository.runningConversationIds.value.contains(conversationId)) return
 
         // The previous turn's screenshot preview is stale once a new message goes out.
+        // The HTML report preview is deliberately kept: its card stays in the chat so
+        // the user can re-open the report while continuing the conversation.
         ToolScreenshotPreview.clear()
-        HtmlPreview.clear()
 
         // Capture files before launching coroutine to avoid race with files being cleared
         val files = _state.value.files

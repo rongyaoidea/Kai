@@ -7,6 +7,7 @@ import com.inspiredandroid.kai.network.tools.ToolInfo
 import com.inspiredandroid.kai.network.tools.ToolSchema
 import com.inspiredandroid.kai.sandbox.LinuxSandboxManager
 import com.inspiredandroid.kai.sandbox.SandboxState
+import com.inspiredandroid.kai.sandbox.normalizeWorkspacePath
 import com.inspiredandroid.kai.sandbox.readFileAsText
 import com.inspiredandroid.kai.sandbox.resolveSandboxFile
 import org.koin.java.KoinJavaComponent.inject
@@ -42,8 +43,8 @@ object SandboxFileTools {
             description = "Read a text file from the workspace and return its lines with pagination. " +
                 "Prefer this over cat/head/sed for reading: it pages large files, caps output, and refuses " +
                 "binaries with a clear error instead of dumping garbage. " +
-                "Path is relative to the workspace home (with the Linux sandbox that is /root; without it, " +
-                "the native workspace the shell starts in). " +
+                "Path is relative to the workspace home (with the Linux sandbox that is /root, and /root/... or ~/... " +
+                "prefixes are accepted; without the sandbox the home is the app-private workspace the shell starts in). " +
                 "For binary or media files use open_file instead.",
             parameters = mapOf(
                 "path" to ParameterSchema("string", "Path relative to the workspace home", true),
@@ -53,10 +54,12 @@ object SandboxFileTools {
         )
 
         override suspend fun execute(args: Map<String, Any>): Any {
-            val path = (args["path"] as? String)?.trim()
+            val rawPath = (args["path"] as? String)?.trim()
                 ?: return mapOf("success" to false, "error" to "path is required")
+            val path = normalizeWorkspacePath(rawPath)
+                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no / or .. segments")
             val file = resolveSandboxFile(activeHome(), path)
-                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no leading / or .. segments")
+                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no / or .. segments")
             if (!file.exists()) {
                 return mapOf("success" to false, "error" to "File not found: $path")
             }
@@ -101,8 +104,8 @@ object SandboxFileTools {
             description = "Write exact text to a file in the workspace. " +
                 "Prefer this over heredoc/echo/sed for precise writes: no shell-quoting mangling, " +
                 "no accidental truncation. Path is relative to the workspace home (with the Linux sandbox " +
-                "that is /root; without it, the native workspace the shell starts in); parent directories " +
-                "are created. Modes: overwrite (default), append, create (fails if the file already exists). " +
+                "that is /root, and /root/... or ~/... prefixes are accepted; without the sandbox the home is the " +
+                "app-private workspace the shell starts in); parent directories are created. Modes: overwrite (default), append, create (fails if the file already exists). " +
                 "Read the file first with read_file when editing existing content. " +
                 "Do not write under skills/ by hand — use install_skill so frontmatter validation, " +
                 "size caps, and the skill cache stay consistent.",
@@ -114,15 +117,17 @@ object SandboxFileTools {
         )
 
         override suspend fun execute(args: Map<String, Any>): Any {
-            val path = (args["path"] as? String)?.trim()
+            val rawPath = (args["path"] as? String)?.trim()
                 ?: return mapOf("success" to false, "error" to "path is required")
+            val path = normalizeWorkspacePath(rawPath)
+                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no / or .. segments")
             val content = args["content"]?.toString()
                 ?: return mapOf("success" to false, "error" to "content is required")
             if (content.toByteArray().size > WRITE_MAX_BYTES) {
                 return mapOf("success" to false, "error" to "Content exceeds the $WRITE_MAX_BYTES-byte write cap")
             }
             val file = resolveSandboxFile(activeHome(), path)
-                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no leading / or .. segments")
+                ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no / or .. segments")
             val mode = ((args["mode"] as? String)?.lowercase() ?: "overwrite")
             if (mode != "overwrite" && mode != "append" && mode != "create") {
                 return mapOf("success" to false, "error" to "mode must be overwrite|append|create")

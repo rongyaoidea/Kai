@@ -142,7 +142,7 @@ Where `browse_page` reads, `web_act` operates: each conversation holds a persist
 
 #### Sandbox file tools (Android)
 
-`read_file` and `write_file` are the exact path for file content in the workspace, where the shell tool's cat/heredoc/sed mangles quoting and truncates silently. Reads paginate by line (offset/limit, 256 KB cap) and refuse binaries with an error pointing at `open_file`; writes take overwrite/append/create modes, create parent directories, reject absolute and `..` paths, and cap content at 1 MB. Both are tiered like the shell — sandbox `/root` when Ready, the app-private native workspace otherwise — so relative paths mean the same file for the shell and the file tools in either tier; they carry no switch of their own.
+`read_file` and `write_file` are the exact path for file content in the workspace, where the shell tool's cat/heredoc/sed mangles quoting and truncates silently. Reads paginate by line (offset/limit, 256 KB cap) and refuse binaries with an error pointing at `open_file`; writes take overwrite/append/create modes, create parent directories, reject absolute and `..` paths, and cap content at 1 MB. `/root/...` and `~/...` prefixes are accepted and mean "relative to the workspace home", so sandbox-era instructions and model priors keep working when the sandbox is not installed. Both are tiered like the shell — sandbox `/root` when Ready, the app-private native workspace otherwise — so relative paths mean the same file for the shell and the file tools in either tier; they carry no switch of their own.
 
 #### Open File (Android)
 

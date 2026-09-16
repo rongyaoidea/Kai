@@ -355,7 +355,8 @@ private fun StringBuilder.appendActiveSkillSection(skill: SkillManifest) {
     }
     if (skill.tier == SkillTier.NATIVE) {
         append("\nThe Linux sandbox is not installed, so this skill runs in the limited native tier: ")
-        append("steps needing packages (apt/apk), python, git or ssh are unavailable. Use the shell applets and the file tools for what the instructions ask for.\n")
+        append("steps needing packages (apt/apk), python, git or ssh are unavailable. Use the shell applets and the file tools for what the instructions ask for; ")
+        append("any `/root/...` path in the instructions maps to the workspace home (the shell's working directory) — use relative paths.\n")
     }
 }
 

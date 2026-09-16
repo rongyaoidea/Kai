@@ -33,6 +33,28 @@ internal fun resolveSandboxFile(homeRoot: String, rel: String): File? {
     return safeChild(File(homeRoot), parts)
 }
 
+/**
+ * Normalizes a model-supplied workspace path into the relative form the file
+ * tools resolve against the active tier's home. Instructions (built-in skills,
+ * user skills, the model's own priors) routinely say `/root/report.pdf` or
+ * `~/skills/<id>/SKILL.md`; both mean "relative to the workspace home" and are
+ * accepted here so the same instruction works with or without the Linux
+ * sandbox. Returns null for empty input or a path still absolute after prefix
+ * stripping; `..` segments are rejected by [resolveSandboxFile].
+ */
+internal fun normalizeWorkspacePath(raw: String): String? {
+    var path = raw.trim()
+    for (prefix in listOf("/root/", "~/", "\\root\\")) {
+        if (path.startsWith(prefix)) {
+            path = path.removePrefix(prefix)
+            break
+        }
+    }
+    if (path == "/root" || path == "~" || path == "\\root") return null
+    if (path.isBlank() || path.startsWith("/") || path.startsWith("\\")) return null
+    return path
+}
+
 /** One row of a directory listing, with the guest path built from [parent]. */
 internal fun File.toFileEntry(parent: String): SandboxFileEntry = SandboxFileEntry(
     name = name,

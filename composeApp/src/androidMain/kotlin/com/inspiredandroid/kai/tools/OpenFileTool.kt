@@ -9,6 +9,7 @@ import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.network.tools.ToolInfo
 import com.inspiredandroid.kai.network.tools.ToolSchema
 import com.inspiredandroid.kai.sandbox.LinuxSandboxManager
+import com.inspiredandroid.kai.sandbox.normalizeWorkspacePath
 import com.inspiredandroid.kai.sandbox.openFileWithIntent
 import com.inspiredandroid.kai.sandbox.resolveSandboxFile
 import kai.composeapp.generated.resources.Res
@@ -48,15 +49,10 @@ object OpenFileTool : Tool {
     override suspend fun execute(args: Map<String, Any>): Any {
         val rawPath = (args["path"] as? String)?.trim()
             ?: return mapOf("success" to false, "error" to "path is required")
-        // The shell calls it /root/page.html — accept that form too instead of
-        // failing with a path error when the agent copies the shell path verbatim.
-        // Other absolute paths stay invalid.
-        if (rawPath == "/root" || rawPath == "/root/") {
-            return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no leading / or .. segments")
-        }
-        val path = (if (rawPath.startsWith("/root/")) rawPath.removePrefix("/root/") else rawPath)
-            .takeIf { it.isNotEmpty() }
-            ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no leading / or .. segments")
+        // `/root/...` and `~/...` prefixes are accepted (instructions and the
+        // shell report paths that way) and mean "relative to the workspace home".
+        val path = normalizeWorkspacePath(rawPath)
+            ?: return mapOf("success" to false, "error" to "Invalid path: must be relative to the workspace home, no / or .. segments")
 
         // Tier order: the sandbox home when Ready, then the native workspace,
         // then browser screenshots (app cache, outside both, so rendering never
