@@ -1,3 +1,8 @@
+## v3.8.2 — 2026-09-16
+
+### Fixes
+- OpenCode gateway Messages endpoint: send Anthropic-native `x-api-key` and `anthropic-version` headers alongside bearer — bearer-only requests answered 401 (shown as invalid key) on Qwen/MiniMax even with a valid key
+
 ## v3.8.1 — 2026-09-15
 
 ### Fixes
