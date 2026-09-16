@@ -402,6 +402,12 @@ class Requests(
                 applyTimeout(requestTimeoutMs)
                 contentType(ContentType.Application.Json)
                 apiKey?.let { bearerAuth(it) }
+                // Anthropic-shaped endpoints authenticate like Anthropic: the official
+                // client (AI SDK anthropic provider) sends x-api-key plus the version
+                // header and no bearer token. Bearer-only requests answer 401 here
+                // even with a valid key, so send the native headers alongside bearer.
+                apiKey?.let { header("x-api-key", it) }
+                header("anthropic-version", "2023-06-01")
                 userAgentFor(service, url)?.let { header("User-Agent", it) }
                 applySessionHeader(service, sessionId, url)
                 setBody(
