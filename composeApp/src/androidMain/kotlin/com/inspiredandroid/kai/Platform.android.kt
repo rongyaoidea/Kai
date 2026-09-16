@@ -36,6 +36,7 @@ import com.inspiredandroid.kai.tools.CalendarRepository
 import com.inspiredandroid.kai.tools.CommonTools
 import com.inspiredandroid.kai.tools.ConversationTools
 import com.inspiredandroid.kai.tools.CreateCalendarEventTool
+import com.inspiredandroid.kai.tools.DeviceLocationTool
 import com.inspiredandroid.kai.tools.NotificationHelper
 import com.inspiredandroid.kai.tools.NotificationTools
 import com.inspiredandroid.kai.tools.OpenFileTool
