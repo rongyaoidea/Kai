@@ -41,6 +41,8 @@ Services currently set to `REASONING_CONTENT`: DeepSeek, OpenRouter, LongCat, Ve
 
 OpenCode Go is deliberately excluded even though it serves the same model families: its gateway validates messages with a strict schema and answers any non-standard field (including `reasoning_content`) with 400 Extra inputs are not permitted, so the Go preset strips the field and the gateway Messages path likewise sends no `cache_control` breakpoints.
 
+The same exclusion applies per model on Zen itself: the free-tier chat models (`big-pickle`, `mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`, see `ZEN_FREE_NO_ECHO_MODELS` in `ModelCapabilities.kt`) are served by strict upstreams and stay silent, while paid Zen routes keep the echo their providers require.
+
 All other services use the default `NONE` (the field is stripped on send). This is the safe default — any service we don't yet have evidence about will not regress.
 
 The chain-of-thought is preserved on `History.reasoningContent` regardless of the wire-side decision so the UI can render thinking traces independently of what gets transmitted on the next request. This applies to assistant turns received over the OpenAI-compatible path; the Anthropic and Gemini paths have their own thinking handling and do not currently populate this field. Capture happens going forward — conversations saved before the persistence support was added will not retroactively gain reasoning content on reload.

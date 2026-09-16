@@ -93,6 +93,27 @@ class GatewayRoutingTest {
     }
 
     @Test
+    fun `zen strict free models stay silent`() {
+        for (model in ZEN_FREE_NO_ECHO_MODELS) {
+            assertEquals(
+                ReasoningRequestMode.NONE,
+                reasoningModeFor(Service.OpenCode, model),
+                "$model must not echo reasoning",
+            )
+        }
+        // Paid Zen routes keep the echo their upstreams require.
+        assertEquals(
+            ReasoningRequestMode.REASONING_CONTENT,
+            reasoningModeFor(Service.OpenCode, "deepseek-v4-pro"),
+        )
+        assertEquals(
+            ReasoningRequestMode.REASONING_CONTENT,
+            reasoningModeFor(Service.OpenCode, "kimi-k2.6"),
+        )
+    }
+}
+
+    @Test
     fun `only zen echoes reasoning content back`() {
         // The Go gateway answers any non-standard message field (including
         // reasoning_content) with 400 Extra inputs are not permitted, so the Go

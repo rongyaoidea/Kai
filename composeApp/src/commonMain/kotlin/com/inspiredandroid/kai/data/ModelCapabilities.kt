@@ -220,3 +220,31 @@ internal val OPENCODE_GO_MESSAGES_API_MODELS = listOf(
     "qwen",
     "minimax",
 )
+
+/**
+ * Zen free-tier chat models served by strict upstreams: echoing `reasoning_content`
+ * back answers 400, so these stay silent even though the OpenCode service otherwise
+ * echoes (its paid DeepSeek route requires the echo). The free Responses model
+ * (`muse-spark-1.3-contributor-free`) needs no entry — the Responses path never
+ * replays reasoning at all.
+ */
+internal val ZEN_FREE_NO_ECHO_MODELS = listOf(
+    "big-pickle",
+    "mimo-v2.5-free",
+    "ling-3.0-flash-fin-free",
+    "nemotron-3-ultra-free",
+    "nemotron-3.5-lightning-free",
+)
+
+/**
+ * Effective reasoning echo mode for one service+model. Defaults to the service's
+ * [Service.reasoningRequestMode]; Zen's strict free-tier models opt out (see
+ * [ZEN_FREE_NO_ECHO_MODELS]).
+ */
+internal fun reasoningModeFor(service: Service, modelId: String): ReasoningRequestMode {
+    if (service == Service.OpenCode) {
+        val id = modelId.substringAfterLast('/').lowercase()
+        if (ZEN_FREE_NO_ECHO_MODELS.any { id.startsWith(it) }) return ReasoningRequestMode.NONE
+    }
+    return service.reasoningRequestMode
+}
