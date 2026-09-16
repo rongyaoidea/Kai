@@ -1,6 +1,6 @@
 # Tools
 
-**Last verified:** 2026-09-15
+**Last verified:** 2026-09-16
 
 Kai's tools feature allows the AI to execute external functions during conversations — web search, notifications, calendar events, shell commands, memory operations, and more. Tools are defined with a schema, executed with safety guards, and managed through per-tool toggles in settings.
 
@@ -32,7 +32,7 @@ The component that looks up a tool by name, parses JSON arguments into a typed m
 |---|---|---|
 | `web_search` | Search the web (direct answer + titles/URLs/snippets) via the no-key chain below. Takes `count` (1-10, default 5) and `time` (any/day/week/month — recency applies to the DuckDuckGo sources). Results carry a `sources` list naming the contributing source; an empty result carries `source_status` with per-source ok/empty/failed telemetry instead of a bare "no results". | Enabled |
 | `get_local_time` | Get the current local date and time | Enabled |
-| `get_location_from_ip` | Get estimated location from IP address | Enabled |
+| `get_location_from_ip` | Get estimated location from IP address (coarse, city-level, no permission). On Android the agent prefers `get_device_location` for precise fixes and falls back to this when the permission is denied | Enabled |
 | `open_url` | Open a URL, link, or local file on the device | Enabled |
 | `fetch_url` | Fetch an http(s) URL and return readable text plus outbound links (GET, POST, HEAD). Blocks private/loopback hosts, including hex/octal/single-number IP disguises and zone-scoped IPv6 loopback literals; redirects are followed automatically; non-HTML bodies are truncated like HTML; a request body is only accepted with POST. Used for reading pages and acting on links from emails (e.g. RFC 8058 one-click unsubscribe). | Enabled |
 | `todo` | Per-conversation task checklist (add/add_many/list/start/done/reopen/edit/remove/clear with pending/in-progress/completed states), persisted so progress survives restarts | Enabled |
@@ -87,6 +87,7 @@ After a reply or a newly composed email is sent, a copy of the outgoing message 
 | `send_notification` | Send a push notification to the device | Enabled |
 | `create_calendar_event` | Create a calendar event on the device | Enabled |
 | `set_alarm` | Set an alarm or countdown timer | Enabled |
+| `get_device_location` | Precise device location (GPS/network) with a best-effort street address; asks for the runtime Location permission on first use (precise or approximate both count), fails fast in background runs that cannot show the dialog | Enabled |
 | `execute_shell_command` | Execute a shell command on the device | Disabled |
 | `ssh_configure_host` | Register a named SSH host alias for the Linux sandbox so subsequent shell calls can use `ssh <alias>`. Rides along whenever the sandbox is installed and enabled. SSH multiplexing (ControlMaster) is intentionally not enabled — Android blocks the `link()` syscall OpenSSH uses for control sockets, so every `ssh` call does a full TCP and authentication handshake. | Disabled |
 | `open_file` | Open a file from the workspace in an Android app (browser, image viewer, etc.), or `preview=true` to show an HTML report in Kai's in-app preview | Enabled |
@@ -96,6 +97,10 @@ After a reply or a newly composed email is sent, a copy of the outgoing message 
 | `list_skills` / `install_skill` / `uninstall_skill` (Android) | Let the agent install and remove sandbox skills from GitHub, a direct SKILL.md URL, or pasted text; installed skills appear in Settings → Tools → Skills | Enabled |
 | `browse_page` | Render a page with the system browser (JS/SPAs) to text or screenshot | Disabled |
 | `web_act` | Drive the device browser session: goto, snapshot elements, tap, fill, scroll, back | Disabled |
+
+#### Device location (Android)
+
+`get_device_location` asks the platform for a fix: a last-known location from any enabled provider answers instantly when it is under five minutes old, otherwise one bounded update is requested (GPS, then network, then passive) with a configurable timeout (default 12 s, max 30 s). The result carries latitude/longitude, accuracy in meters, the provider, the fix's age, a maps link, and — best-effort, when the geocoder is available — a street address. The first call triggers the runtime Location permission dialog; precise and approximate grants both count (Android 12+ users often pick approximate). Background runs (scheduled tasks, heartbeats) cannot show that dialog and fail fast with a pointer to `get_location_from_ip` instead of stalling.
 
 #### Linux Sandbox (Android)
 
@@ -270,7 +275,7 @@ Tool availability is controlled at multiple levels:
 - **Per-tool toggles** — individual tools can be enabled or disabled in settings, persisted with a `tool_enabled_` key prefix
 - **Default state** — every tool defaults to enabled, including `execute_shell_command` (tiered: full sandbox shell when installed, host shell otherwise), the web tools, automation, and the agent-side MCP/skill installers. The runtime approval gate still asks before each risky call (privileged shell, installs, email sending), so defaults-on means fewer setup taps, not unattended execution. SMS sending stays default-off; everything else is on.
 - **Master-toggle-only** — memory, scheduling, heartbeat, email, SMS, and notification tools have no individual per-tool toggle; they are on whenever their master switch in Settings → Agent is on (heartbeat is bundled with the scheduling switch). The Android sandbox tools and desktop's `manage_process` are gated the same way — by the sandbox switch and the shell switch respectively — and likewise carry no switch of their own
-- **On-device (LiteRT) allowlist** — when the active model is an on-device LiteRT model, only a small allowlist of tools is exposed regardless of which other tools are enabled. The current allowlist is: `get_local_time`, `get_location_from_ip`, `web_search`, `open_url`, `fetch_url`, `memory_store`, `memory_forget`, `memory_reinforce`, `search_memories`, `todo`, `search_conversations`, and `execute_shell_command`. Memory tools beyond those listed, email tools, scheduling tools, and heartbeat tools are not surfaced to local models even when their master switches are on.
+- **On-device (LiteRT) allowlist** — when the active model is an on-device LiteRT model, only a small allowlist of tools is exposed regardless of which other tools are enabled (`get_device_location` is deliberately excluded: its permission dialog needs an interactive run, so on-device models keep the IP-based fallback). The current allowlist is: `get_local_time`, `get_location_from_ip`, `web_search`, `open_url`, `fetch_url`, `memory_store`, `memory_forget`, `memory_reinforce`, `search_memories`, `todo`, `search_conversations`, and `execute_shell_command`. Memory tools beyond those listed, email tools, scheduling tools, and heartbeat tools are not surfaced to local models even when their master switches are on.
 
 The platform layer assembles the final list of available tools by checking all gates and per-tool settings, and only enabled tools are sent to the AI provider. Name collisions resolve with first occurrence winning, so native tools always shadow same-named MCP tools — strict providers (notably DeepSeek, directly and via the OpenCode Go gateway) answer duplicate function names with 400 ("tool name must be unique") while lenient ones silently accept them.
 

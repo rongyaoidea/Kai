@@ -50,12 +50,34 @@ private fun permissionsFor(permission: AppPermission): Array<String> = when (per
     } else {
         emptyArray()
     }
+
+    // Precise and approximate are requested together; the user may grant only
+    // approximate (Android 12+), which still satisfies this permission.
+    AppPermission.LOCATION -> arrayOf(
+        Manifest.permission.ACCESS_FINE_LOCATION,
+        Manifest.permission.ACCESS_COARSE_LOCATION,
+    )
+}
+
+/**
+ * Whether a permission result map counts as granted. Location is the one
+ * permission where a partial grant is usable: Android 12+ users can choose
+ * "approximate only", which denies FINE but grants COARSE.
+ */
+private fun isGranted(permission: AppPermission, granted: Collection<Boolean>): Boolean = when (permission) {
+    AppPermission.LOCATION -> granted.any { it }
+    else -> granted.all { it }
 }
 
 private val androidContext: Context by inject(Context::class.java)
 
-internal actual fun platformHasPermission(permission: AppPermission): Boolean = permissionsFor(permission).all {
-    ContextCompat.checkSelfPermission(androidContext, it) == PackageManager.PERMISSION_GRANTED
+internal actual fun platformHasPermission(permission: AppPermission): Boolean {
+    val required = permissionsFor(permission)
+    if (required.isEmpty()) return true
+    return isGranted(
+        permission,
+        required.map { ContextCompat.checkSelfPermission(androidContext, it) == PackageManager.PERMISSION_GRANTED },
+    )
 }
 
 internal actual fun platformCanRequest(permission: AppPermission): Boolean = permissionsFor(permission).isNotEmpty()
@@ -79,7 +101,7 @@ actual fun SetupPermissionHandler(controller: PermissionController) {
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { permissions ->
-        controller.onPermissionResult(permissions.values.all { it })
+        controller.onPermissionResult(isGranted(controller.permission, permissions.values))
     }
 
     LaunchedEffect(permissionRequested) {

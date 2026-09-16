@@ -15,6 +15,9 @@ internal actual fun platformHasPermission(permission: AppPermission): Boolean = 
 
     // Desktop doesn't gate local network access.
     AppPermission.LOCAL_NETWORK -> true
+
+    // The device-location tool is Android-only; the IP-based location tool needs no permission.
+    AppPermission.LOCATION -> false
 }
 
 internal actual fun platformCanRequest(permission: AppPermission): Boolean = false

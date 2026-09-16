@@ -12,6 +12,9 @@ internal actual fun platformHasPermission(permission: AppPermission): Boolean = 
 
     // iOS shows its own local network prompt automatically on first access.
     AppPermission.LOCAL_NETWORK -> true
+
+    // The device-location tool is Android-only; the IP-based location tool needs no permission.
+    AppPermission.LOCATION -> false
 }
 
 internal actual fun platformCanRequest(permission: AppPermission): Boolean = false

@@ -255,6 +255,7 @@ actual fun getPlatformToolDefinitions(): List<ToolInfo> = CommonTools.commonTool
         SendNotificationTool.toolInfo,
         CreateCalendarEventTool.toolInfo,
         SetAlarmTool.toolInfo,
+        DeviceLocationTool.toolInfo,
         OpenFileTool.toolInfo,
         SandboxFileTools.readFileToolInfo,
         SandboxFileTools.writeFileToolInfo,
@@ -304,6 +305,15 @@ actual fun getAvailableTools(): List<Tool> {
 
         if (appSettings.isToolEnabled(SetAlarmTool.ID)) {
             add(SetAlarmTool.create(context))
+        }
+
+        // Device location (GPS/network): asks for the runtime Location permission on
+        // first use; the tool description tells the model to fall back to
+        // get_location_from_ip when denied.
+        if (appSettings.isToolEnabled(DeviceLocationTool.ID)) {
+            val locationPermissionController: PermissionController =
+                KoinJavaComponent.get(PermissionController::class.java, permissionQualifier(AppPermission.LOCATION))
+            add(DeviceLocationTool.create(locationPermissionController))
         }
 
         if (appSettings.isToolEnabled(OpenFileTool.schema.name)) {

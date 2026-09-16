@@ -28,6 +28,12 @@ enum class AppPermission {
      * LM Studio, ...) on the user's home network.
      */
     LOCAL_NETWORK,
+
+    /**
+     * Device location (GPS/network) for the `get_device_location` tool. Either the
+     * precise or the approximate grant counts — Android 12+ lets the user pick.
+     */
+    LOCATION,
 }
 
 /**

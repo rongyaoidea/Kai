@@ -84,7 +84,11 @@ object CommonTools {
     val ipLocationTool = object : Tool {
         override val schema = ToolSchema(
             name = "get_location_from_ip",
-            description = "Get the user's coarse, city-level estimated location based on their IP address (not GPS). Returns city, region, country, coordinates, and timezone.",
+            description = "Get the user's coarse, city-level estimated location based on their IP address (not GPS). " +
+                "Returns city, region, country, coordinates, and timezone. Needs no permission. " +
+                "On Android, prefer get_device_location when the user asks where they are or needs a precise, " +
+                "device-accurate fix; use this tool as the fallback when the location permission is denied, " +
+                "the device has no fix, or the user only needs a city-level estimate.",
             parameters = emptyMap(),
         )
 
