@@ -1,3 +1,14 @@
+## v3.9.0 — 2026-09-16
+
+### Features
+- Skills without the Linux sandbox: skill folders now live in two homes — the sandbox when installed, the app-private native workspace otherwise. Installs, the skill list, slash commands and built-ins all work sandbox-free, degrading to prompt-only skills (the model is told packages/python/ssh are unavailable); with the sandbox installed everything behaves as before
+- File tools and `open_file` are tiered like the shell: `/root` with the sandbox, the app-private workspace without it, so relative paths mean the same file for the shell and the tools in both tiers
+- HTML report preview in chat: `open_file(preview=true)` shows an HTML file in Kai (a card in chat opens a locked-down full-screen preview) instead of switching to another app; falls back to external opening where unsupported
+
+### Improvements
+- Native shell description now explains how to discover the device's toybox applets and that the shell shares its workspace with the file tools
+- Zen strict free-tier models (`big-pickle`, `mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-*`, …) no longer echo `reasoning_content`, matching the Go gateway fix
+
 ## v3.8.2 — 2026-09-16
 
 ### Fixes
