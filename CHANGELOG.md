@@ -1,3 +1,8 @@
+## v3.10.0 — 2026-09-16
+
+### Features
+- Device location: the new `get_device_location` tool (Android) reads the phone's GPS/network location after asking for the runtime Location permission — a fresh fix answers instantly, otherwise one bounded update (12 s default, max 30 s) with a best-effort street address. Either precise or approximate permission works; background runs that cannot show the dialog fail fast to the IP-based estimate
+
 ## v3.9.1 — 2026-09-16
 
 ### Fixes
