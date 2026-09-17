@@ -196,17 +196,20 @@ object FetchUrlTool : Tool {
      */
     internal fun expandShortIpv4(parts: List<String>): List<Int>? = when (parts.size) {
         4 -> parts.map { parseIpv4Part(it) ?: return null }
+
         3 -> {
             val a = parseIpv4Part(parts[0]) ?: return null
             val b = parseIpv4Part(parts[1]) ?: return null
             val c = parseIpv4Part(parts[2], 0xFFFF) ?: return null
             listOf(a, b, (c shr 8) and 0xFF, c and 0xFF)
         }
+
         2 -> {
             val a = parseIpv4Part(parts[0]) ?: return null
             val b = parseIpv4Part(parts[1], 0xFFFFFF) ?: return null
             listOf(a, (b shr 16) and 0xFF, (b shr 8) and 0xFF, b and 0xFF)
         }
+
         else -> null
     }
 
