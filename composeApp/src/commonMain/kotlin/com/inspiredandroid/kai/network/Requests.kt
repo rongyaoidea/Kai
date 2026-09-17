@@ -79,6 +79,15 @@ private fun HttpRequestBuilder.applyTimeout(requestTimeoutMs: Long?) {
 private val processSessionId: String by lazy { Uuid.random().toString() }
 
 /**
+ * Project id sent as `x-opencode-project`. The official client sends its project id here;
+ * Kai has no project concept, so one stable id per process stands in for it.
+ */
+private val processProjectId: String by lazy { Uuid.random().toString() }
+
+/** Client id the official OpenCode client sends (`OPENCODE_CLIENT`, default `cli`). */
+internal const val OPENCODE_CLIENT = "cli"
+
+/**
  * True when this request targets OpenCode's gateway: the first-party OpenCode (Zen) and
  * OpenCode Go services, or an OpenAI-Compatible instance pointed at an opencode.ai base
  * URL — the path users took to reach Go before the dedicated preset existed.
@@ -93,34 +102,54 @@ internal fun isOpenCodeEndpoint(service: Service, url: String): Boolean {
 internal fun isOpenCodeGoUrl(url: String): Boolean = url.contains("/zen/go/", ignoreCase = true)
 
 /**
- * OpenCode Zen identifies the calling client by an `x-opencode-session` header and rejects
- * requests that omit it. One id per conversation, so a whole chat reads as a single session
- * upstream; [sessionId] is the conversation id, or null for requests outside any conversation.
+ * Client identity headers for OpenCode's gateway, mirroring the official client
+ * (`packages/opencode/src/session/llm/request.ts`: `x-opencode-project`,
+ * `x-opencode-session`, `x-opencode-request`, `x-opencode-client`, `User-Agent:
+ * opencode/<version>`). The gateway's free-model pool now rejects requests that
+ * arrive without the full set ("only usable in OpenCode") — the session header
+ * and the spoofed User-Agent alone no longer unlock it.
  *
- * Go requires the same header for routing and prompt caching, so it is also sent when an
- * OpenAI-Compatible instance points at an opencode.ai base URL (how Go is reached today).
- * No other provider is sent a session header.
+ * One id per conversation for `x-opencode-session`, so a whole chat reads as a single
+ * session upstream; [sessionId] is the conversation id, or null for requests outside
+ * any conversation. `x-opencode-project` is a stable per-process id (Kai has no
+ * project concept); `x-opencode-request` is fresh per HTTP request (see
+ * [newOpenCodeRequestId]).
+ *
+ * Go requires the same headers for routing and prompt caching, so they are also sent
+ * when an OpenAI-Compatible instance points at an opencode.ai base URL (how Go was
+ * reached before the dedicated preset). No other provider is sent these headers.
  */
 internal fun sessionHeadersFor(service: Service, sessionId: String?, url: String = ""): Map<String, String> = if (isOpenCodeEndpoint(service, url)) {
-    mapOf("x-opencode-session" to (sessionId?.takeIf { it.isNotBlank() } ?: processSessionId))
+    mapOf(
+        "x-opencode-client" to OPENCODE_CLIENT,
+        "x-opencode-session" to (sessionId?.takeIf { it.isNotBlank() } ?: processSessionId),
+        "x-opencode-project" to processProjectId,
+    )
 } else {
     emptyMap()
 }
 
+/** Fresh `x-opencode-request` id per HTTP request, mirroring the official client's per-message id. */
+internal fun newOpenCodeRequestId(): String = Uuid.random().toString()
+
 /**
  * OpenCode Zen's free-model pool gates on User-Agent, not on key or IP: only
  * `opencode/<version>` gets 200s, anything else (curl, third-party clients —
- * including Kai's default UA) is answered 429 FreeUsageLimitError without any
- * usage. The `x-opencode-*` headers alone do not unlock it. Ktor's UserAgent
- * plugin only fills the header when absent, so this per-request override wins
+ * including Kai's default UA) is rejected. Since late 2026 the gateway additionally
+ * requires the full `x-opencode-*` client header set (client/session/project/request);
+ * the User-Agent or the session header alone no longer unlocks free models. Ktor's
+ * UserAgent plugin only fills the header when absent, so this per-request override wins
  * for Zen while every other provider keeps reporting Kai honestly.
  *
  * Go is the opposite: it asks clients to identify with their own user agent
  * (e.g. `my-coding-agent/1.0`) rather than a generic name, and does not gate on
  * the official one — so Go endpoints keep Kai's default UA and only gain the
- * session header.
+ * client headers.
+ *
+ * Version tracks the latest official release (v1.18.31, 2026-09-14); bump together
+ * with the header set if free models start rejecting requests again.
  */
-internal const val OPENCODE_USER_AGENT = "opencode/1.18.16"
+internal const val OPENCODE_USER_AGENT = "opencode/1.18.31"
 
 internal fun userAgentFor(service: Service, url: String = ""): String? = when {
     service == Service.OpenCode -> OPENCODE_USER_AGENT
@@ -131,6 +160,9 @@ internal fun userAgentFor(service: Service, url: String = ""): String? = when {
 
 private fun HttpRequestBuilder.applySessionHeader(service: Service, sessionId: String?, url: String = "") {
     sessionHeadersFor(service, sessionId, url).forEach { (k, v) -> header(k, v) }
+    if (isOpenCodeEndpoint(service, url)) {
+        header("x-opencode-request", newOpenCodeRequestId())
+    }
 }
 
 /**
