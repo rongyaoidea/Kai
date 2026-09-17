@@ -20,7 +20,7 @@ class JsStringDecodeTest {
         assertEquals("ab\\u12", decodeJsString("\"ab\\u12\""))
         // Non-hex \u keeps the backslash; nothing is swallowed.
         assertEquals("ab\\uZZZZcd", decodeJsString("\"ab\\uZZZZcd\""))
-        assertEquals("a\bb\fc", decodeJsString("\"a\\bb\\fc\""))
+        assertEquals("a\bb" + 12.toChar() + "c", decodeJsString("\"a\\bb\\fc\""))
     }
 
     @Test
