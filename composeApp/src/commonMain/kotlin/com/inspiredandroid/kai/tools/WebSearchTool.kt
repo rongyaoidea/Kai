@@ -950,5 +950,4 @@ object WebSearchTool : Tool {
         nameRes = Res.string.tool_web_search_name,
         descriptionRes = Res.string.tool_web_search_description,
     )
-
 }
