@@ -21,10 +21,12 @@ A note on naming: Android's `UiAutomation` class itself is hidden from third-par
 
 All three switches in Settings → Agent → Automation default to on since 2026-09-15 (master, control-actions, Shizuku), and each automation tool additionally keeps its own switch in the Tools tab, default on as well. Tools are still only offered while their backing service is actually alive (bound accessibility service or running Shizuku), and the runtime approval gate asks before privileged actions — so defaults-on removes setup taps without removing consent.
 
-Two fences apply to every write, no matter which tool performs it:
+Two fences apply to every UI write action, no matter which tool performs it:
 
 - **Sensitive blocklist** — banking and payment apps, password managers, authenticators, and the system package installer can never be driven. The agent is told to refuse with an explanation instead of retrying.
 - **User allowlist** — an optional list of package names. When set, control is limited to exactly those apps; when empty, every app except the blocklist is fair game. Reads are never restricted — an agent that cannot see cannot act safely.
+
+The privileged shell is deliberately outside the foreground-app fence: a shell line is not an interaction with the app on screen (it usually queries system state), so a sensitive-looking foreground package must not block `pm list packages`. It is gated by the per-command approval dialog instead — the exact command is shown and must be approved (and background runs can never approve it).
 
 Tools are only offered while their backing service is actually alive: the tool list is rebuilt with the accessibility binding and the Shizuku binder state taken into account, and every execution re-checks, so a grant revoked mid-chat fails with a repair hint instead of acting. Irreversible actions (payments, deletions, sending content out) must be confirmed with the user first — the agent's instructions say so, and the blocklist makes the most dangerous targets unreachable in the first place.
 

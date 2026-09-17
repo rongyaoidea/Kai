@@ -1,3 +1,16 @@
+## v3.10.2 — 2026-09-17
+
+### Fixes
+- Tool audit hardening: `fetch_url` re-checks the host after redirects and blocks short-form (`127.1`), hex/octal and embedded-IPv4 IPv6 loopback disguises; the browser tools share the same check
+- Tool results can no longer be escaped: a literal end-of-untrusted-output marker inside fetched content is neutralized before wrapping, and the approval dialog says when a long command was truncated
+- `web_act`: element ids now address the element the snapshot showed (previously hidden elements shifted every later id, so taps/fills could hit the wrong element); `input` accepts the same `expect` guard as `tap` and reports the element's current text when the page changed
+- Email: `check_email` surfaces the oldest unseen mail first so nothing is stranded below the delivery watermark, reports a failure when every account is unreachable, and no longer leaks connections on failed logins
+- Skills: installs warn when the repo listing fails or the 20-sibling cap trims files, a bare `owner/repo` paste no longer downloads the whole repository, reinstalls remove hand-written same-id folders, and more pasted URL forms (`www.`, `.git`, `tree/<ref>` without path, `?query`) resolve
+- Web search: non-ASCII result URLs decode correctly, a hanging instant-answer endpoint is benched like any other source, and Sogou's session cookie is retried instead of cached forever after one failure
+- Text decoding: emoji/supplementary numeric entities and malformed `\u` escapes in WebView replies survive, and `&amp;lt;` no longer double-decodes
+- MCP: duplicate-server detection keeps path case and query (default ports and fragments are still ignored), and non-string header values stringify instead of being dropped
+- Smaller fixes: memory keys are trimmed consistently, `reply_sms` reports a missing read permission instead of a bogus id, `open_url` accepts uppercase schemes, concurrent permission requests serialize, duplicate notification ids fire once, and `search_conversations` reports `snippet_count` instead of the misleading `match_count`
+
 ## v3.10.1 — 2026-09-17
 
 ### Fixes
