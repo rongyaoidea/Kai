@@ -151,16 +151,16 @@ object EmailTools {
     ): Map<String, Any> {
         val smtp = SmtpClient(account.smtpHost, account.smtpPort, account.useStartTls)
         val password = emailStore.getPassword(account.id)
-        smtp.connect()
-        smtp.ehlo()
-        if (account.useStartTls) smtp.startTls()
-        smtp.authenticate(account.username.ifEmpty { account.email }, password)
-        val from = if (account.displayName.isNotEmpty()) {
-            "${account.displayName} <${account.email}>"
-        } else {
-            account.email
-        }
         try {
+            smtp.connect()
+            smtp.ehlo()
+            if (account.useStartTls) smtp.startTls()
+            smtp.authenticate(account.username.ifEmpty { account.email }, password)
+            val from = if (account.displayName.isNotEmpty()) {
+                "${account.displayName} <${account.email}>"
+            } else {
+                account.email
+            }
             return block(smtp, from)
         } finally {
             smtp.quit()
@@ -205,7 +205,6 @@ object EmailTools {
             return try {
                 imap.connect()
                 val loginOk = imap.login(email, password)
-                imap.logout()
 
                 if (!loginOk) {
                     return mapOf(
@@ -245,6 +244,8 @@ object EmailTools {
                     "error" to "Connection failed: ${e.message}" +
                         (detected?.note?.let { " Note: $it" } ?: ""),
                 )
+            } finally {
+                imap.logout()
             }
         }
     }
@@ -279,9 +280,12 @@ object EmailTools {
                     val syncState = emailStore.getSyncState(account.id)
                     withImapSession(account, emailStore) { imap ->
                         val unseenUids = imap.searchUnseen()
+                        // Oldest-first like the heartbeat poller: the watermark below
+                        // jumps to the highest delivered UID, so taking the newest
+                        // here would strand older mail below the watermark forever.
                         val newUids = unseenUids
                             .filter { it > syncState.lastSeenUid }
-                            .takeLast(20)
+                            .take(20)
                         if (newUids.isEmpty()) return@withImapSession
                         val messages = imap.fetchHeaders(newUids, account.id)
                         for (msg in messages) {
@@ -321,6 +325,16 @@ object EmailTools {
             }
 
             val accountsInfo = accounts.map { mapOf("account_id" to it.id, "email" to it.email) }
+            if (allEmails.isEmpty() && errors.size >= accounts.size && accounts.isNotEmpty()) {
+                return buildMap {
+                    put("success", false)
+                    put("unread_count", 0)
+                    put("emails", allEmails)
+                    put("accounts", accountsInfo)
+                    put("errors", errors)
+                    put("error", "Could not reach any account: ${errors.joinToString("; ")}")
+                }
+            }
             return buildMap {
                 put("success", true)
                 put("unread_count", allEmails.size)

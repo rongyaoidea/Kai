@@ -81,7 +81,7 @@ class IntentStore(appSettings: AppSettings) {
     suspend fun claim(ids: List<String>, watermark: Long): List<String> {
         var fresh: List<String> = emptyList()
         backing.update { state ->
-            fresh = ids.filter { it !in state.firedNotificationIds }
+            fresh = ids.distinct().filter { it !in state.firedNotificationIds }
             if (fresh.isEmpty() && watermark <= state.watermarkEpochMs) return@update state
             state.copy(
                 firedNotificationIds = (state.firedNotificationIds + fresh).takeLast(MAX_FIRED_IDS),

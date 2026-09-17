@@ -173,6 +173,16 @@ class WebViewSessionManager(private val appContext: Context) {
             ?: return WebActCommand.WebActionResult(false, "")
         val result = WebActCommand.parseActionResult(raw)
             ?: return WebActCommand.WebActionResult(false, "")
+        if (result.ok && !submit) {
+            // inputJs fills then reports the live value: a page change between
+            // snapshot and fill lands on the wrong element, so verify the filled
+            // text like tap verifies its hint instead of reporting ok blindly.
+            // (Skipped for submit: Enter may navigate or clear the field.)
+            val want = text.trim().replace(Regex("\\s+"), " ").take(24)
+            if (want.isNotEmpty() && want !in result.text) {
+                return WebActCommand.WebActionResult(false, result.text)
+            }
+        }
         if (result.ok && submit) delay(SETTLE_MS)
         return result
     }

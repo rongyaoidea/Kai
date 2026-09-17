@@ -1,6 +1,6 @@
 # MCP Servers
 
-**Last verified:** 2026-09-15
+**Last verified:** 2026-09-17
 
 Kai supports external tool servers via the [Model Context Protocol](https://modelcontextprotocol.io/) (MCP). Users can connect to remote MCP servers using Streamable HTTP transport and use their tools alongside native tools.
 
@@ -30,7 +30,7 @@ In the Tools tab of settings, the "MCP Servers" section appears above native too
 
 MCP server configurations are included in the settings export/import feature, so the full set of servers (and their headers) can be moved between devices.
 
-The **agent can add and remove servers itself** through `add_mcp_server` / `list_mcp_servers` / `remove_mcp_server` (Tools tab switches, default on). `add_mcp_server` registers the server, connects, and returns the tools it exposes in one step; duplicate URLs are detected ignoring trailing slashes and case, and headers are accepted as an object or a JSON string. A connection failure leaves the server configured so the settings Refresh action can retry — the failure message also tells the agent to remove-then-add again, since the agent has no refresh action of its own. Because both paths write the same store, anything the agent installs shows up in Settings → Tools → MCP Servers immediately. When two servers expose the same tool name, the first one connected answers it deterministically; each server's full tool list stays visible on its own card.
+The **agent can add and remove servers itself** through `add_mcp_server` / `list_mcp_servers` / `remove_mcp_server` (Tools tab switches, default on). `add_mcp_server` registers the server, connects, and returns the tools it exposes in one step; duplicate URLs are detected ignoring trailing slashes, host case, default ports and fragments (path case and query count), and headers are accepted as an object or a JSON string. A connection failure leaves the server configured so the settings Refresh action can retry — the failure message also tells the agent to remove-then-add again, since the agent has no refresh action of its own. Because both paths write the same store, anything the agent installs shows up in Settings → Tools → MCP Servers immediately. When two servers expose the same tool name, the first one connected answers it deterministically; each server's full tool list stays visible on its own card.
 
 ## Connection Flow
 

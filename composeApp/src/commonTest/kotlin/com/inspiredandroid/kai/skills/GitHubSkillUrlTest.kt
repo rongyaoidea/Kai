@@ -42,4 +42,24 @@ class GitHubSkillUrlTest {
         assertNull(parseGitHubSkillUrl(""))
         assertNull(parseGitHubSkillUrl("   "))
     }
+
+    @Test
+    fun `tolerates pasted url variants`() {
+        assertEquals(
+            SkillSource.GitHub("owner", "repo", "main", ""),
+            parseGitHubSkillUrl("https://github.com/owner/repo/tree/main"),
+        )
+        assertEquals(
+            SkillSource.GitHub("owner", "repo", "main", ""),
+            parseGitHubSkillUrl("https://www.github.com/owner/repo"),
+        )
+        assertEquals(
+            SkillSource.GitHub("owner", "repo", "main", ""),
+            parseGitHubSkillUrl("owner/repo.git"),
+        )
+        assertEquals(
+            SkillSource.GitHub("owner", "repo", "main", ""),
+            parseGitHubSkillUrl("https://github.com/owner/repo?tab=stars"),
+        )
+    }
 }

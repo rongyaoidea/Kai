@@ -13,9 +13,10 @@ import kotlinx.serialization.json.jsonPrimitive
  * existing approval model applies unchanged.
  *
  * Element addressing is snapshot-scoped, mirroring ui_dump: `snapshotJs`
- * numbers the currently interactable elements, and tap/input re-query the
- * same selector and verify the on-screen text still matches before acting —
- * a changed page fails with "re-snapshot" instead of clicking blindly.
+ * numbers the currently interactable elements, and tap/input report live text
+ * so the caller verifies the element before trusting the action — tap matches
+ * its snapshot hint, input matches the filled value (unless submit navigates
+ * away). A changed page fails instead of acting blindly.
  */
 object WebActCommand {
     const val MAX_ELEMENTS = 200
@@ -134,7 +135,7 @@ object WebActCommand {
         })()
     """.trimIndent()
 
-    fun backJs(): String = "(function(){if(history.length>0){history.back();return{ok:true} }return{ok:false}})()"
+    fun backJs(): String = "(function(){if(history.length>1){history.back();return{ok:true} }return{ok:false}})()"
 
     data class WebElement(
         val index: Int,

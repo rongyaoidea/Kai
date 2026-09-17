@@ -57,7 +57,9 @@ class SkillRegistry(
      */
     suspend fun browseMarketplace(marketplace: SkillMarketplace): Result<List<RegistrySkillEntry>> = runCatching {
         val (owner, repo, ref) = Triple(marketplace.owner, marketplace.repo, marketplace.ref)
-        val treePaths = fetchRepoTree(owner, repo, ref)
+        // Null tree = listing failed: this source contributes nothing rather than
+        // a silently file-less browse (per-source isolation, see above).
+        val treePaths = fetchRepoTree(owner, repo, ref) ?: return@runCatching emptyList()
 
         // An explicit allowlist skips the manifest fetch entirely.
         val manifest = if (marketplace.skills != null) {
@@ -162,9 +164,10 @@ class SkillRegistry(
         // A null tree means the listing failed (rate limit, network): install
         // what we have but flag it incomplete instead of silently dropping files.
         val tree = runCatching { fetchRepoTree(owner, repo, ref) }.getOrNull()
-        val siblings = (tree ?: emptySet())
-            .filter { if (path.isBlank()) it != "SKILL.md" else it.startsWith("$path/") && it != "$path/SKILL.md" }
+        val candidates = (tree ?: emptySet()).filter { candidateSkillFile(it, path) }
+        val siblings = candidates
             .map { if (path.isBlank()) it else it.removePrefix("$path/") } // relative subpath, may contain '/'
+            .take(MAX_SIBLING_FILES)
 
         // Download the bundled files in parallel — sequential round-trips here were
         // the main source of the install delay. Binaries and oversized files are dropped.
@@ -188,24 +191,38 @@ class SkillRegistry(
             description = parsed.description,
             rawSkillMd = skillMd,
             files = files,
-            incomplete = tree == null,
+            // Null tree = listing failed, so files may be missing; a cap cut also
+            // drops files. Either way the install must say so.
+            incomplete = tree == null || candidates.size > siblings.size,
         )
     }
 
     /**
-     * Recursively lists every blob path in a repo via the git trees API — one
-     * call instead of a Contents call per folder. Returns an empty set on failure.
+     * A bare owner/repo paste means "skill at the repo root" — but the root also
+     * holds unrelated repo files, so only root-level files count as siblings
+     * instead of cloning the whole repo.
      */
-    private suspend fun fetchRepoTree(owner: String, repo: String, ref: String): Set<String> {
+    private fun candidateSkillFile(repoPath: String, skillPath: String): Boolean = if (skillPath.isBlank()) {
+        repoPath != "SKILL.md" && !repoPath.contains('/')
+    } else {
+        repoPath.startsWith("$skillPath/") && repoPath != "$skillPath/SKILL.md"
+    }
+
+    /**
+     * Recursively lists every blob path in a repo via the git trees API — one
+     * call instead of a Contents call per folder. Returns null on failure so the
+     * caller flags the install incomplete instead of silently dropping files.
+     */
+    private suspend fun fetchRepoTree(owner: String, repo: String, ref: String): Set<String>? {
         val url = "https://api.github.com/repos/$owner/$repo/git/trees/$ref?recursive=1"
         val response = client.get(url) {
             header("Accept", "application/vnd.github+json")
             header("X-GitHub-Api-Version", "2022-11-28")
         }
-        if (!response.status.isSuccess()) return emptySet()
+        if (!response.status.isSuccess()) return null
         val body = response.bodyAsText()
-        val root = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return emptySet()
-        val treeArray = root["tree"] as? JsonArray ?: return emptySet()
+        val root = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
+        val treeArray = root["tree"] as? JsonArray ?: return null
         return treeArray.mapNotNull { entry ->
             val obj = entry.jsonObject
             val type = obj["type"]?.jsonPrimitive?.contentOrNull
@@ -227,6 +244,7 @@ class SkillRegistry(
     companion object {
         private const val MARKETPLACE_MANIFEST_PATH = ".claude-plugin/marketplace.json"
         private const val MAX_BUNDLED_FILE_CHARS = 256_000
+        private const val MAX_SIBLING_FILES = 20
 
         private val BINARY_EXTENSIONS = setOf(
             "png", "jpg", "jpeg", "gif", "webp", "bmp", "ico", "svg",

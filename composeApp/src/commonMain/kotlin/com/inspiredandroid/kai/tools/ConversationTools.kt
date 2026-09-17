@@ -81,7 +81,8 @@ object ConversationTools {
                 "chats with excerpts. Use it when the user references an earlier discussion — " +
                 "a past decision, a file the assistant produced, an error already solved. " +
                 "Automation chatter (heartbeat runs) ranks below real chats. " +
-                "Returns conversation ids and titles, not full transcripts.",
+                "Returns conversation ids and titles, not full transcripts. " +
+                "Capped at 5 conversations with up to 3 excerpts each — narrow the query when capped.",
             parameters = mapOf(
                 "query" to ParameterSchema(type = "string", description = "Keywords to match against titles and messages", required = true),
             ),
@@ -101,7 +102,7 @@ object ConversationTools {
                         "id" to match.conversation.id,
                         "title" to match.conversation.title.ifBlank { "Untitled" },
                         "updated_at" to match.conversation.updatedAt,
-                        "match_count" to match.snippets.size,
+                        "snippet_count" to match.snippets.size,
                         "snippets" to match.snippets.map { snippet ->
                             mapOf("role" to snippet.role, "excerpt" to snippet.excerpt)
                         },

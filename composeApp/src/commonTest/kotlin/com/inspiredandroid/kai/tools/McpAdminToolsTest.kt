@@ -2,23 +2,47 @@ package com.inspiredandroid.kai.tools
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 /**
  * Contract tests for the small parsing helpers behind `add_mcp_server`:
- * URL de-duplication must ignore trailing slashes, and headers must survive
- * being serialized as a JSON string instead of an object.
+ * URL de-duplication ignores trailing slashes, host case, default ports and
+ * fragments (but keeps path case and query); headers survive being serialized
+ * as a JSON string instead of an object, and non-string values stringify
+ * instead of vanishing.
  */
 class McpAdminToolsTest {
 
     @Test
-    fun `normalizeServerUrl ignores trailing slashes and case`() {
+    fun `normalizeServerUrl ignores trailing slashes and host case`() {
         assertEquals(
             McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp"),
             McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp/"),
         )
         assertEquals(
             McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp"),
-            McpAdminTools.normalizeServerUrl("HTTPS://MCP.EXAMPLE.COM/MCP///"),
+            McpAdminTools.normalizeServerUrl("HTTPS://MCP.EXAMPLE.COM/mcp///"),
+        )
+    }
+
+    @Test
+    fun `normalizeServerUrl keeps path case query and unifies default ports`() {
+        // Paths are case-sensitive: different case may be a different endpoint.
+        assertTrue(
+            McpAdminTools.normalizeServerUrl("https://mcp.example.com/MCP") !=
+                McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp"),
+        )
+        assertEquals(
+            McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp?key=1"),
+            McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp/?key=1"),
+        )
+        assertEquals(
+            McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp"),
+            McpAdminTools.normalizeServerUrl("https://mcp.example.com:443/mcp"),
+        )
+        assertEquals(
+            McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp"),
+            McpAdminTools.normalizeServerUrl("https://mcp.example.com/mcp#frag"),
         )
     }
 
@@ -40,5 +64,13 @@ class McpAdminToolsTest {
         assertEquals(emptyMap(), McpAdminTools.parseHeadersArg(""))
         assertEquals(emptyMap(), McpAdminTools.parseHeadersArg("not json"))
         assertEquals(emptyMap(), McpAdminTools.parseHeadersArg(42))
+    }
+
+    @Test
+    fun `parseHeadersArg stringifies non-string values`() {
+        assertEquals(
+            mapOf("Authorization" to "{\"token\":\"abc\"}"),
+            McpAdminTools.parseHeadersArg("""{"Authorization": {"token": "abc"}}"""),
+        )
     }
 }

@@ -5,6 +5,7 @@ import com.inspiredandroid.kai.network.tools.ParameterSchema
 import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.network.tools.ToolInfo
 import com.inspiredandroid.kai.network.tools.ToolSchema
+import io.ktor.http.Url
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -119,12 +120,32 @@ object McpAdminTools {
         }
     }
 
-    /** Trailing slashes carry no meaning for server identity — ignore them when de-duplicating. */
-    internal fun normalizeServerUrl(url: String): String = url.trim().trimEnd('/').lowercase()
+    /**
+     * Server identity for de-duplication: scheme + host case-insensitively
+     * (hosts are), default ports ignored, fragments dropped (never sent), but
+     * the path keeps its case and the query is kept — `…/MCP` and `…/mcp` may
+     * be different endpoints, while `…/mcp/` vs `…/mcp` never are.
+     */
+    internal fun normalizeServerUrl(url: String): String {
+        val t = url.trim().trimEnd('/')
+        return runCatching {
+            val parsed = Url(t)
+            buildString {
+                append(parsed.protocol.name.lowercase())
+                append("://")
+                append(parsed.host.lowercase())
+                if (parsed.port != parsed.protocol.defaultPort) append(":${parsed.port}")
+                append(parsed.encodedPath.trimEnd('/'))
+                if (parsed.encodedQuery.isNotEmpty()) append("?${parsed.encodedQuery}")
+            }
+        }.getOrNull() ?: t.lowercase()
+    }
 
     /**
      * Headers arrive as a JSON object from most models, but some serialize the
      * whole map as a string. Accept both instead of silently dropping auth.
+     * Non-string values stringify instead of vanishing (a nested
+     * `{"Authorization": {...}}` must not lose the key silently).
      */
     internal fun parseHeadersArg(raw: Any?): Map<String, String> {
         (raw as? Map<*, *>)?.entries
@@ -132,9 +153,9 @@ object McpAdminTools {
             ?.let { return it }
         val text = (raw as? String)?.trim()?.takeIf { it.isNotEmpty() } ?: return emptyMap()
         return runCatching {
-            Json.parseToJsonElement(text).jsonObject.entries.mapNotNull { (k, v) ->
-                runCatching { k to v.jsonPrimitive.content }.getOrNull()
-            }.toMap()
+            Json.parseToJsonElement(text).jsonObject.entries.associate { (k, v) ->
+                k to runCatching { v.jsonPrimitive.content }.getOrElse { v.toString() }
+            }
         }.getOrDefault(emptyMap())
     }
 

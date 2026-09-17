@@ -65,6 +65,14 @@ class WebSearchParsingTest {
     }
 
     @Test
+    fun `redirect extraction reassembles utf8 sequences`() {
+        assertEquals(
+            "https://example.com/中",
+            WebSearchTool.extractUrlFromRedirect("//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2F%E4%B8%AD"),
+        )
+    }
+
+    @Test
     fun `base64url decoder round-trips bing redirect payload`() {
         assertEquals(
             "https://www.linux.org/pages/download/",

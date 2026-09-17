@@ -18,12 +18,14 @@ import kai.composeapp.generated.resources.tool_web_search_description
 import kai.composeapp.generated.resources.tool_web_search_name
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -491,13 +493,18 @@ object WebSearchTool : Tool {
     }
 
     private suspend fun loadAnswer(encodedQuery: String): Pair<Map<String, String>?, String> = try {
-        val answer = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { fetchInstantAnswer(encodedQuery) }
+        // withTimeout (not OrNull): a hanging instant endpoint must bench like a
+        // hanging list source instead of looking like an empty answer forever.
+        val answer = withTimeout(SOURCE_TIMEOUT_MS) { fetchInstantAnswer(encodedQuery) }
         if (answer != null) {
             circuit.recordSuccess(SRC_INSTANT)
             answer to "ok"
         } else {
             null to "empty"
         }
+    } catch (e: TimeoutCancellationException) {
+        circuit.recordFailure(SRC_INSTANT, SourceFailureKind.NETWORK)
+        null to "timeout after ${SOURCE_TIMEOUT_MS / 1000}s"
     } catch (e: CancellationException) {
         // Early return cancels stragglers; that is not a source failure.
         throw e
@@ -720,24 +727,33 @@ object WebSearchTool : Tool {
      */
     private var sogouCookieValue: String? = null
     private var sogouCookieFetched = false
+    private val sogouCookieMutex = Mutex()
 
     private suspend fun sogouCookie(): String? {
         if (sogouCookieFetched) return sogouCookieValue
-        sogouCookieFetched = true
-        sogouCookieValue = try {
-            val response = client.get("https://www.sogou.com/") { header("User-Agent", DESKTOP_UA) }
-            if (!response.status.isSuccess()) {
+        // Serialize concurrent first-searches and only cache success: a failed
+        // homepage fetch must not poison the cookie for the process lifetime.
+        return sogouCookieMutex.withLock {
+            if (sogouCookieFetched) return sogouCookieValue
+            val fetched = try {
+                val response = client.get("https://www.sogou.com/") { header("User-Agent", DESKTOP_UA) }
+                if (!response.status.isSuccess()) {
+                    null
+                } else {
+                    val body = response.bodyAsText()
+                    if (looksLikeCaptcha(body, SOGOU_CAPTCHA_MARKERS)) null else cookieHeader(response)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
                 null
-            } else {
-                val body = response.bodyAsText()
-                if (looksLikeCaptcha(body, SOGOU_CAPTCHA_MARKERS)) null else cookieHeader(response)
             }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (_: Exception) {
-            null
+            if (fetched != null) {
+                sogouCookieValue = fetched
+                sogouCookieFetched = true
+            }
+            fetched
         }
-        return sogouCookieValue
     }
 
     internal fun parseSo360Results(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
@@ -891,33 +907,47 @@ object WebSearchTool : Tool {
         return if (href.startsWith("//")) "https:$href" else href
     }
 
-    private fun decodeURLComponent(encoded: String): String = buildString {
+    // Percent-decoding must reassemble UTF-8 byte sequences before turning them
+    // into chars: decoding byte-by-byte corrupts every non-ASCII result URL.
+    private fun decodeURLComponent(encoded: String): String {
+        val pending = mutableListOf<Byte>()
+        val out = StringBuilder()
+        fun flushBytes() {
+            if (pending.isNotEmpty()) {
+                out.append(pending.toByteArray().decodeToString())
+                pending.clear()
+            }
+        }
         var i = 0
         while (i < encoded.length) {
             when {
                 encoded[i] == '%' && i + 2 < encoded.length -> {
-                    val hex = encoded.substring(i + 1, i + 3)
-                    val byte = hex.toIntOrNull(16)
+                    val byte = encoded.substring(i + 1, i + 3).toIntOrNull(16)
                     if (byte != null) {
-                        append(byte.toChar())
+                        pending.add(byte.toByte())
                         i += 3
                     } else {
-                        append(encoded[i])
+                        flushBytes()
+                        out.append(encoded[i])
                         i++
                     }
                 }
 
                 encoded[i] == '+' -> {
-                    append(' ')
+                    flushBytes()
+                    out.append(' ')
                     i++
                 }
 
                 else -> {
-                    append(encoded[i])
+                    flushBytes()
+                    out.append(encoded[i])
                     i++
                 }
             }
         }
+        flushBytes()
+        return out.toString()
     }
 
     private fun String.stripHtml(): String = replace(htmlTagRegex, "")

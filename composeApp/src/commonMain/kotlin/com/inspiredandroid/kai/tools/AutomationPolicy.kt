@@ -6,8 +6,12 @@ package com.inspiredandroid.kai.tools
  * Pure Kotlin so it stays unit-testable in commonTest. The Android controller
  * feeds it the foreground package name; it answers whether an interaction may
  * proceed. Reads are always allowed — a model that cannot see cannot act safely.
- * Writes (tap / input / scroll / launch / privileged shell) additionally require
+ * Writes (tap / input / scroll / launch) additionally require
  * the write switch the caller already checked and must pass this gate.
+ * `privileged_shell` is deliberately outside this gate: a shell line is not a
+ * foreground-app interaction (it also queries system state), and every
+ * invocation already passes the per-command approval dialog with the exact
+ * command visible.
  *
  * Two layers:
  * 1. Sensitive blocklist — packages whose UI must never be driven: banking and

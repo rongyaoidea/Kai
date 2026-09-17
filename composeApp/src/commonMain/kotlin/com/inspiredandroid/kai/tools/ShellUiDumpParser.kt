@@ -48,17 +48,27 @@ object ShellUiDumpParser {
             if (out.size >= maxNodes) break
             val attrs = attr.findAll(match.groupValues[2])
                 .associate { it.groupValues[1] to it.groupValues[2] }
-            val boundsMatch = attrs["bounds"]?.let { bounds.find(it) } ?: continue
+            // A boundless self-closing node consumed a depth level above without
+            // ever producing a node or a closing tag: undo it so every later
+            // node isn't permanently one level too deep.
+            val boundsMatch = attrs["bounds"]?.let { bounds.find(it) } ?: run {
+                if (selfClosing && depth > -1) depth--
+                continue
+            }
+            val left = boundsMatch.groupValues[1].toIntOrNull() ?: continue
+            val top = boundsMatch.groupValues[2].toIntOrNull() ?: continue
+            val right = boundsMatch.groupValues[3].toIntOrNull() ?: continue
+            val bottom = boundsMatch.groupValues[4].toIntOrNull() ?: continue
             val node = ShellUiNode(
                 text = attrs["text"].orEmpty(),
                 desc = attrs["content-desc"].orEmpty(),
                 resId = attrs["resource-id"].orEmpty(),
                 className = attrs["class"].orEmpty(),
                 pkg = attrs["package"].orEmpty(),
-                left = boundsMatch.groupValues[1].toInt(),
-                top = boundsMatch.groupValues[2].toInt(),
-                right = boundsMatch.groupValues[3].toInt(),
-                bottom = boundsMatch.groupValues[4].toInt(),
+                left = left,
+                top = top,
+                right = right,
+                bottom = bottom,
                 clickable = attrs["clickable"] == "true",
                 editable = attrs["editable"] == "true" || attrs["class"] == "android.widget.EditText",
                 scrollable = attrs["scrollable"] == "true",

@@ -50,6 +50,23 @@ class ShellUiDumpParserTest {
     }
 
     @Test
+    fun boundlessSelfClosingNodeDoesNotShiftLaterDepths() {
+        val xml = "<hierarchy>" +
+            "<node text=\"Ghost\" class=\"android.view.View\" package=\"x\" />" +
+            "<node text=\"Real\" class=\"android.view.View\" package=\"x\" bounds=\"[0,0][10,10]\" />" +
+            "</hierarchy>"
+        val nodes = ShellUiDumpParser.parseNodes(xml, 200, null)
+        assertEquals(1, nodes.size)
+        assertEquals(0, nodes[0].depth)
+    }
+
+    @Test
+    fun overflowingBoundsAreSkippedNotThrown() {
+        val xml = "<hierarchy><node text=\"Big\" class=\"android.view.View\" package=\"x\" bounds=\"[0,0][99999999999999999999,10]\" /></hierarchy>"
+        assertTrue(ShellUiDumpParser.parseNodes(xml, 200, null).isEmpty())
+    }
+
+    @Test
     fun parsesForegroundPackage() {
         val dumpsys = "topResumedActivity=ActivityRecord{9d43613 u0 com.chrome/.Main} other stuff"
         assertEquals("com.chrome", ShellUiDumpParser.foregroundPackage(dumpsys))

@@ -15,5 +15,14 @@ object UntrustedToolOutput {
     const val OPEN = "<<UNTRUSTED_TOOL_OUTPUT>>"
     const val CLOSE = "<<END_UNTRUSTED_TOOL_OUTPUT>>"
 
-    fun wrap(result: String): String = "$OPEN\n$result\n$CLOSE"
+    /**
+     * Substitute for an attacker-controlled [CLOSE] inside a result: tool output is
+     * routinely third-party text (a web page, a mail body, an MCP reply), and a
+     * literal close marker in it would end the envelope early, promoting whatever
+     * follows to trusted instructions. An inner [OPEN] needs no escaping — only
+     * [CLOSE] ends the envelope.
+     */
+    const val ESCAPED_CLOSE = "<<END_UNTRUSTED_TOOL_OUTPUT (escaped)>>"
+
+    fun wrap(result: String): String = "$OPEN\n${result.replace(CLOSE, ESCAPED_CLOSE)}\n$CLOSE"
 }

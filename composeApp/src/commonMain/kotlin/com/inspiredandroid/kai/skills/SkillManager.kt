@@ -125,6 +125,13 @@ class SkillManager(
         val (store, _) = activeStores().firstOrNull()
             ?: error("No skill storage available on this device")
         store.delete(downloaded.id) // replace if present
+        // A hand-made folder may carry a different directory name for the same
+        // id (see uninstall): remove it too, or load() flips between the two
+        // copies depending on folder listing order.
+        findDirectoryForSkill(downloaded.id)
+            ?.takeIf { !it.equals(downloaded.id, ignoreCase = true) }
+            ?.takeIf { stale -> store.listFolders().any { it == stale } }
+            ?.let { store.delete(it) }
         store.write(downloaded.id, "SKILL.md", downloaded.rawSkillMd)
         for ((relPath, content) in downloaded.files) {
             val safe = relPath.split('/', '\\').filterNot { it.isEmpty() || it == ".." }
@@ -248,17 +255,20 @@ fun parseSkillInstallInput(github: String?, url: String?, content: String?): Res
  * Returns null on a shape we don't recognize so the dialog can surface a hint.
  */
 fun parseGitHubSkillUrl(input: String): SkillSource.GitHub? {
-    val trimmed = input.trim().removePrefix("https://").removePrefix("http://").removePrefix("github.com/")
+    val trimmed = input.trim().substringBefore('?').substringBefore('#')
+        .removePrefix("https://").removePrefix("http://")
+        .removePrefix("www.github.com/").removePrefix("github.com/")
     if (trimmed.isEmpty()) return null
     val parts = trimmed.trim('/').split('/').filter { it.isNotEmpty() }
     if (parts.size < 2) return null
     val owner = parts[0]
-    val repo = parts[1]
+    val repo = parts[1].removeSuffix(".git")
+    if (owner.isEmpty() || repo.isEmpty()) return null
     if (parts.size == 2) {
         return SkillSource.GitHub(owner = owner, repo = repo, ref = "main", path = "")
     }
-    // owner/repo/tree/<ref>/<path…> or owner/repo/<path…> (assume main)
-    return if (parts[2] == "tree" && parts.size >= 5) {
+    // owner/repo/tree/<ref>[/<path…>] or owner/repo/<path…> (assume main)
+    return if (parts[2] == "tree" && parts.size >= 4) {
         val ref = parts[3]
         val path = parts.drop(4).joinToString("/")
         SkillSource.GitHub(owner = owner, repo = repo, ref = ref, path = path)

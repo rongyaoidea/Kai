@@ -232,7 +232,8 @@ object CommonTools {
         override suspend fun execute(args: Map<String, Any>): Any {
             val url = args["url"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
                 ?: return mapOf("success" to false, "error" to "URL is required")
-            if (!url.startsWith("http://") && !url.startsWith("https://") && !url.startsWith("mailto:")) {
+            val lower = url.lowercase()
+            if (!lower.startsWith("http://") && !lower.startsWith("https://") && !lower.startsWith("mailto:")) {
                 return mapOf("success" to false, "error" to "only http, https, and mailto URLs can be opened")
             }
             return try {
@@ -348,8 +349,10 @@ object CommonTools {
         )
 
         override suspend fun execute(args: Map<String, Any>): Any {
-            val key = args["key"]?.toString() ?: return mapOf("success" to false, "error" to "Missing key")
-            val content = args["content"]?.toString() ?: return mapOf("success" to false, "error" to "Missing content")
+            // Trimmed like memory_store/memory_forget: an untrimmed key here would
+            // create an entry those tools can never address by the same input.
+            val key = args["key"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return mapOf("success" to false, "error" to "Missing key")
+            val content = args["content"]?.toString()?.takeIf { it.isNotEmpty() } ?: return mapOf("success" to false, "error" to "Missing content")
             val categoryStr = args["category"]?.toString()?.uppercase() ?: return mapOf("success" to false, "error" to "Missing category")
             val source = args["source"]?.toString()
 
@@ -378,7 +381,7 @@ object CommonTools {
         )
 
         override suspend fun execute(args: Map<String, Any>): Any {
-            val key = args["key"]?.toString() ?: return mapOf("success" to false, "error" to "Missing key")
+            val key = args["key"]?.toString()?.trim()?.takeIf { it.isNotEmpty() } ?: return mapOf("success" to false, "error" to "Missing key")
             val entry = memoryStore.reinforceMemory(key)
                 ?: return mapOf("success" to false, "error" to "Memory not found: $key")
             return mapOf("success" to true, "key" to entry.key, "hit_count" to entry.hitCount)
@@ -402,6 +405,7 @@ object CommonTools {
     internal fun rankMemories(query: String, entries: List<MemoryEntry>): List<MemoryEntry> {
         val terms = query.lowercase().split(WORD_SPLIT_REGEX).filter { it.isNotEmpty() }
         if (terms.isEmpty()) return emptyList()
+        val phrase = query.trim().lowercase()
         return entries.mapNotNull { entry ->
             val key = entry.key.lowercase()
             val content = entry.content.lowercase()
@@ -410,7 +414,7 @@ object CommonTools {
                 if (term in key) score += 3
                 if (term in content) score += 1
             }
-            if (query.lowercase() in content) score += 2
+            if (phrase.isNotEmpty() && phrase in content) score += 2
             if (score > 0) entry to score else null
         }.sortedByDescending { it.second }.take(SEARCH_RESULT_LIMIT).map { it.first }
     }

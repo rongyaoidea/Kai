@@ -77,7 +77,7 @@ object NotificationTools {
             if (!reader.hasAccess()) {
                 return mapOf("success" to false, "error" to "Notification access not granted")
             }
-            val id = args["id"]?.toString()
+            val id = args["id"]?.toString()?.takeIf { it.isNotBlank() }
                 ?: return mapOf("success" to false, "error" to "Missing id")
             val record = reader.getById(id)
                 ?: return mapOf("success" to false, "error" to "No notification found with id $id")

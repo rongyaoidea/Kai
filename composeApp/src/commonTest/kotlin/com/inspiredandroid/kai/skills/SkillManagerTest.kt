@@ -109,6 +109,20 @@ class SkillManagerTest {
     }
 
     @Test
+    fun `reinstall removes a hand-written folder with the same id`() = runTest {
+        val sandbox = FakeSandboxController()
+        sandbox.files["/root/skills/my-custom-dir/SKILL.md"] = skillMd("bar")
+        sandbox.files["/root/skills/my-custom-dir/note.txt"] = "stale"
+        val mgr = manager(sandbox)
+        mgr.load()
+
+        mgr.install(DownloadedSkill("bar", "desc", skillMd("bar"), mapOf("new.txt" to "2")))
+
+        assertTrue(sandbox.files.keys.none { it.startsWith("/root/skills/my-custom-dir/") })
+        assertEquals("2", sandbox.files["/root/skills/bar/new.txt"])
+    }
+
+    @Test
     fun `uninstall deletes the folder`() = runTest {
         val sandbox = FakeSandboxController()
         val mgr = manager(sandbox)

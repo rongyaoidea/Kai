@@ -48,4 +48,13 @@ class LocalNetworkUrlTest {
     fun `blank url is not local`() {
         assertFalse(isLocalNetworkUrl(""))
     }
+
+    @Test
+    fun `non-decimal and short lan forms are local`() {
+        assertTrue(isLocalNetworkUrl("http://0xC0.0xA8.0.1:8080/v1"))
+        assertTrue(isLocalNetworkUrl("http://0300.0250.0.1/v1"))
+        assertTrue(isLocalNetworkUrl("http://10.1/v1"))
+        assertTrue(isLocalNetworkUrl("http://[::ffff:192.168.0.1]/v1"))
+        assertFalse(isLocalNetworkUrl("http://[::ffff:8.8.8.8]/v1"))
+    }
 }

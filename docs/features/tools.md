@@ -1,6 +1,6 @@
 # Tools
 
-**Last verified:** 2026-09-16
+**Last verified:** 2026-09-17
 
 Kai's tools feature allows the AI to execute external functions during conversations — web search, notifications, calendar events, shell commands, memory operations, and more. Tools are defined with a schema, executed with safety guards, and managed through per-tool toggles in settings.
 
@@ -34,7 +34,7 @@ The component that looks up a tool by name, parses JSON arguments into a typed m
 | `get_local_time` | Get the current local date and time | Enabled |
 | `get_location_from_ip` | Get estimated location from IP address (coarse, city-level, no permission). On Android the agent prefers `get_device_location` for precise fixes and falls back to this when the permission is denied | Enabled |
 | `open_url` | Open a URL, link, or local file on the device | Enabled |
-| `fetch_url` | Fetch an http(s) URL and return readable text plus outbound links (GET, POST, HEAD). Blocks private/loopback hosts, including hex/octal/single-number IP disguises and zone-scoped IPv6 loopback literals; redirects are followed automatically; non-HTML bodies are truncated like HTML; a request body is only accepted with POST. Used for reading pages and acting on links from emails (e.g. RFC 8058 one-click unsubscribe). | Enabled |
+| `fetch_url` | Fetch an http(s) URL and return readable text plus outbound links (GET, POST, HEAD). Blocks private/loopback hosts, including hex/octal/single-number/short-form IP disguises, embedded-IPv4 IPv6 literals and zone-scoped loopbacks; redirects are followed automatically but the final host is re-checked before the body is returned; non-HTML bodies are truncated like HTML; a request body is only accepted with POST. Used for reading pages and acting on links from emails (e.g. RFC 8058 one-click unsubscribe). | Enabled |
 | `todo` | Per-conversation task checklist (add/add_many/list/start/done/reopen/edit/remove/clear with pending/in-progress/completed states), persisted so progress survives restarts | Enabled |
 
 #### open_url platform behavior
@@ -144,7 +144,7 @@ Evaluated and rejected: Mojeek (captcha wall), Startpage (Anubis proof-of-work c
 
 #### Extension management (agent-installable)
 
-The agent can install its own extensions, mirroring the Settings UI. `add_mcp_server` registers a Streamable HTTP server, connects, and returns its tools in one step; duplicate URLs are detected ignoring trailing slashes and case, and request headers are accepted as an object or a JSON string. A connection failure keeps the server configured so Refresh can retry — the failure message tells the agent to refresh from Settings or remove-then-add again, since the agent has no refresh action of its own. On Android with the sandbox ready, `install_skill` takes a GitHub reference, a direct `SKILL.md` URL, or pasted `SKILL.md` text through the same validated path the UI uses; when the file listing fails (rate limit, network) the install still lands the `SKILL.md` but carries a warning to retry for the missing siblings. `list_skills` / `uninstall_skill` manage skills (uninstall matches ids case-insensitively, like slash commands). Both surfaces read the same stores as Settings, so anything the agent adds is visible there immediately. Each tool keeps its own Tools-tab switch and defaults to on. When two MCP servers expose the same tool name, the first one connected wins deterministically; each server's full set stays visible in Settings.
+The agent can install its own extensions, mirroring the Settings UI. `add_mcp_server` registers a Streamable HTTP server, connects, and returns its tools in one step; duplicate URLs are detected ignoring trailing slashes, host case, default ports and fragments (path case and query count — `…/MCP` and `…/mcp` may be different endpoints), and request headers are accepted as an object or a JSON string with non-string values stringified instead of dropped. A connection failure keeps the server configured so Refresh can retry — the failure message tells the agent to refresh from Settings or remove-then-add again, since the agent has no refresh action of its own. On Android with the sandbox ready, `install_skill` takes a GitHub reference, a direct `SKILL.md` URL, or pasted `SKILL.md` text through the same validated path the UI uses; when the file listing fails (rate limit, network) the install still lands the `SKILL.md` but carries a warning to retry for the missing siblings. `list_skills` / `uninstall_skill` manage skills (uninstall matches ids case-insensitively, like slash commands). Both surfaces read the same stores as Settings, so anything the agent adds is visible there immediately. Each tool keeps its own Tools-tab switch and defaults to on. When two MCP servers expose the same tool name, the first one connected wins deterministically; each server's full set stays visible in Settings.
 
 #### Headless browser (Android)
 

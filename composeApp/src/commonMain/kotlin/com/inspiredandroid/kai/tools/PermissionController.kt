@@ -4,6 +4,8 @@ import androidx.compose.runtime.Composable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.time.Duration.Companion.seconds
 
@@ -50,6 +52,12 @@ class PermissionController(internal val permission: AppPermission) {
 
     private val permissionResultFlow = MutableStateFlow<Boolean?>(null)
 
+    // Serializes concurrent requests: without it two tools asking at once share
+    // the result flow and the first finisher clears the dialog signal while the
+    // second is still waiting. The re-check inside means the second request
+    // observes a grant from the first instead of re-prompting.
+    private val requestMutex = Mutex()
+
     /** True if the permission is already granted, or not gated on this platform/OS version. */
     fun hasPermission(): Boolean = platformHasPermission(permission)
 
@@ -57,7 +65,7 @@ class PermissionController(internal val permission: AppPermission) {
      * Request the permission and suspend until the user responds.
      * Returns true if permission was granted, false otherwise.
      */
-    suspend fun requestPermission(): Boolean {
+    suspend fun requestPermission(): Boolean = requestMutex.withLock {
         if (hasPermission()) return true
         // Platforms without a launcher would otherwise sit out the full timeout below waiting for
         // a result that can never arrive.
@@ -71,7 +79,7 @@ class PermissionController(internal val permission: AppPermission) {
         }
 
         _permissionRequested.value = false
-        return result ?: false
+        result ?: false
     }
 
     /** Called from Compose when the permission result is received. */

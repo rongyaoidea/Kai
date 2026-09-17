@@ -57,10 +57,36 @@ class FetchUrlToolTest {
             "2130706433",
             "0x7f000001",
             "0177.0.0.1",
+            // inet_aton short forms resolve to the same addresses.
+            "127.1",
+            "10.1",
+            "0x7f.1",
+            "0x7f.0x0.0x0.0x1",
+            "127.0.1",
+            "10.0.1",
+            "192.168.1",
+            "169.254.1",
+            "::",
+            "::ffff:10.0.0.1",
+            "::ffff:192.168.0.1",
         )
         for (host in blocked) {
             assertTrue(FetchUrlTool.isBlockedHost(host), "expected $host to be blocked")
         }
+    }
+
+    @Test
+    fun `short public forms stay allowed`() {
+        for (host in listOf("8.8", "1.1", "11.1", "172.32.1")) {
+            assertFalse(FetchUrlTool.isBlockedHost(host), "expected $host to be allowed")
+        }
+    }
+
+    @Test
+    fun `shared host check fails closed on blank hosts`() {
+        assertTrue(blockedUrlHostReason("https://")?.isNotBlank() == true)
+        assertTrue(blockedUrlHostReason("http://127.0.0.1/")?.contains("blocked host") == true)
+        assertNull(blockedUrlHostReason("https://example.com/"))
     }
 
     @Test

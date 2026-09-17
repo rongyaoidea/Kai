@@ -107,6 +107,13 @@ object FetchUrlTool : Tool {
             }
 
             val responseCt = response.headers["Content-Type"].orEmpty()
+            // Engines (OkHttp, Darwin, Js) follow redirects below Ktor's plugins, so the
+            // initial-host check above cannot see them: re-check the final URL and refuse
+            // to hand the body to the model when a redirect landed on a blocked host.
+            val finalHost = response.call.request.url.host
+            if (isBlockedHost(finalHost)) {
+                return mapOf("success" to false, "error" to "blocked host after redirect: $finalHost — private, loopback and link-local addresses are not reachable from tools")
+            }
             val rawBody = if (methodArg == "HEAD") "" else response.bodyAsText()
             val body = if (responseCt.startsWith("text/html", ignoreCase = true)) {
                 extractReadableText(rawBody)
@@ -159,33 +166,68 @@ object FetchUrlTool : Tool {
         val h = host.lowercase().trim('[', ']').substringBefore('%')
         if (h.isEmpty()) return true
         if (h == "localhost" || h.endsWith(".localhost")) return true
-        if (h == "::1" || h == "0:0:0:0:0:0:0:1" || h == "::ffff:127.0.0.1") return true
-        if (h.startsWith("fe80:")) return true
-        // Unique-local IPv6 (fc00::/7, fd00::/8) — the colon keeps hostnames
-        // like "fcc.gov" or "fdic.gov" from being treated as addresses.
-        if (h.contains(':') && (h.startsWith("fc") || h.startsWith("fd"))) return true
+        // IPv6 — including embedded-IPv4 forms like ::ffff:10.0.0.1, judged by
+        // their trailing quad, and the unspecified address "::".
+        if (h.contains(':')) return isBlockedIpv6(h)
+        // Dotted numeric forms with 2-4 parts (inet_aton semantics: 127.1 and
+        // 0x7f.1 resolve to loopback too, not just full quads).
+        if (h.contains('.')) {
+            expandShortIpv4(h.split("."))?.let { return isBlockedIpv4(it) }
+        }
         // Single-number forms (decimal 2130706433, hex 0x7f000001) decode to IPv4 too.
         parseSingleNumberIp(h)?.let { return isBlockedIpv4(it) }
-        val octets = h.split(".")
-        if (octets.size == 4) {
-            val parsed = octets.map { parseIpv4Part(it) ?: return false }
-            return isBlockedIpv4(parsed)
-        }
         return false
     }
 
-    /** One dotted part in decimal, octal (leading 0), or hex (0x) notation. Null when not numeric. */
-    private fun parseIpv4Part(part: String): Int? {
+    /** One dotted part in decimal, octal (leading 0), or hex (0x) notation, up to [max]. Null when not numeric. */
+    internal fun parseIpv4Part(part: String, max: Int = 255): Int? {
         if (part.isEmpty()) return null
         return when {
             part.startsWith("0x", ignoreCase = true) -> part.substring(2).toIntOrNull(16)
             part.length > 1 && part.startsWith("0") && part.all { it.isDigit() } -> part.toIntOrNull(8)
             part.all { it.isDigit() } -> part.toIntOrNull()
             else -> null
-        }?.takeIf { it in 0..255 }
+        }?.takeIf { it in 0..max }
     }
 
-    private fun parseSingleNumberIp(host: String): List<Int>? {
+    /**
+     * inet_aton short forms: the last part absorbs the remaining bytes ("127.1"
+     * is 127.0.0.1, "10.1" is 10.0.0.1). Null when any part isn't numeric.
+     */
+    internal fun expandShortIpv4(parts: List<String>): List<Int>? = when (parts.size) {
+        4 -> parts.map { parseIpv4Part(it) ?: return null }
+        3 -> {
+            val a = parseIpv4Part(parts[0]) ?: return null
+            val b = parseIpv4Part(parts[1]) ?: return null
+            val c = parseIpv4Part(parts[2], 0xFFFF) ?: return null
+            listOf(a, b, (c shr 8) and 0xFF, c and 0xFF)
+        }
+        2 -> {
+            val a = parseIpv4Part(parts[0]) ?: return null
+            val b = parseIpv4Part(parts[1], 0xFFFFFF) ?: return null
+            listOf(a, (b shr 16) and 0xFF, (b shr 8) and 0xFF, b and 0xFF)
+        }
+        else -> null
+    }
+
+    private fun isBlockedIpv6(h: String): Boolean {
+        if (h == "::1" || h == "0:0:0:0:0:0:0:1" || h == "::") return true
+        if (h.startsWith("fe80:")) return true
+        // Unique-local IPv6 (fc00::/7) — the colon keeps hostnames
+        // like "fcc.gov" or "fdic.gov" from being treated as addresses.
+        if (h.startsWith("fc") || h.startsWith("fd")) return true
+        // Embedded IPv4 (::ffff:10.0.0.1): judge by the trailing quad.
+        if (h.contains('.')) {
+            val tail = h.substringAfterLast(':').split(".")
+            if (tail.size == 4) {
+                val octets = tail.map { parseIpv4Part(it) ?: return false }
+                return isBlockedIpv4(octets)
+            }
+        }
+        return false
+    }
+
+    internal fun parseSingleNumberIp(host: String): List<Int>? {
         val num = when {
             host.startsWith("0x", ignoreCase = true) -> host.substring(2).toLongOrNull(16)
             host.all { it.isDigit() } && host.length in 4..10 -> host.toLongOrNull()
@@ -208,6 +250,23 @@ object FetchUrlTool : Tool {
         }
     }
 
+    /**
+     * Numeric IPv4 octets for [host] in any notation resolvers accept: full
+     * quad, inet_aton short forms, octal/hex parts, a single 32-bit number, or
+     * the trailing quad of an embedded-IPv4 IPv6 literal. Null when not numeric.
+     */
+    internal fun numericIpv4Octets(host: String): List<Int>? {
+        val h = host.lowercase().trim('[', ']').substringBefore('%')
+        if (h.contains(':')) {
+            if (!h.contains('.')) return null
+            val tail = h.substringAfterLast(':').split(".")
+            if (tail.size != 4) return null
+            return tail.map { parseIpv4Part(it) ?: return null }
+        }
+        if (h.contains('.')) return expandShortIpv4(h.split("."))
+        return parseSingleNumberIp(h)
+    }
+
     val toolInfo = ToolInfo(
         id = "fetch_url",
         name = "Fetch URL",
@@ -227,7 +286,7 @@ object FetchUrlTool : Tool {
  */
 internal fun blockedUrlHostReason(rawUrl: String): String? {
     val host = runCatching { Url(rawUrl).host }.getOrNull()
-    if (host.isNullOrBlank()) return null
+    if (host.isNullOrBlank()) return "invalid URL — pass an absolute http(s) URL with a host"
     if (!FetchUrlTool.isBlockedHost(host)) return null
     return "blocked host: $host — private, loopback and link-local addresses are not reachable from tools"
 }

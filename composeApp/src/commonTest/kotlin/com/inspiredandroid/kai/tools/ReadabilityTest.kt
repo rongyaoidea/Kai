@@ -15,6 +15,15 @@ class JsStringDecodeTest {
     }
 
     @Test
+    fun `keeps malformed escapes instead of swallowing`() {
+        // Truncated \u keeps the backslash; the 'u' is re-read literally.
+        assertEquals("ab\\u12", decodeJsString("\"ab\\u12\""))
+        // Non-hex \u keeps the backslash; nothing is swallowed.
+        assertEquals("ab\\uZZZZcd", decodeJsString("\"ab\\uZZZZcd\""))
+        assertEquals("a\bb\fc", decodeJsString("\"a\\bb\\fc\""))
+    }
+
+    @Test
     fun `null blank and bare values decode empty`() {
         assertEquals("", decodeJsString(null))
         assertEquals("", decodeJsString("null"))
@@ -62,6 +71,14 @@ class ReadabilityTest {
     fun `numeric entities decode`() {
         assertTrue("A&#65;".decodeHtmlEntities() == "AA")
         assertTrue("&#x41;".decodeHtmlEntities() == "A")
+    }
+
+    @Test
+    fun `no double decode and astral planes survive`() {
+        // "&amp;lt;" shows as literal "&lt;" on the page — not as "<".
+        assertEquals("&lt;div&gt;", "&amp;lt;div&amp;gt;".decodeHtmlEntities())
+        assertEquals("😀", "&#128512;".decodeHtmlEntities())
+        assertEquals("😀", "&#x1F600;".decodeHtmlEntities())
     }
 
     @Test

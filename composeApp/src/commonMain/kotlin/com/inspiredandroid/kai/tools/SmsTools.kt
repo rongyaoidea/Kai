@@ -253,6 +253,15 @@ object SmsTools {
             if (body.length > MAX_BODY_CHARS) {
                 return mapOf("success" to false, "error" to "Body is ${body.length} chars (max $MAX_BODY_CHARS) — shorten it and retry")
             }
+            // readById returns null when the message is missing OR readable SMS
+            // is unavailable — check first so a missing read grant isn't
+            // misreported as a bad id.
+            if (!smsReader.isSupported()) {
+                return mapOf("success" to false, "error" to "SMS is not available on this build")
+            }
+            if (!smsReader.hasPermission()) {
+                return mapOf("success" to false, "error" to "SMS read permission not granted — cannot look up the original. Ask the user to enable SMS in Settings.")
+            }
 
             val original = smsReader.readById(smsId)
                 ?: return mapOf("success" to false, "error" to "No SMS found with id $smsId")

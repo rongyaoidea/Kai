@@ -9,23 +9,33 @@ package com.inspiredandroid.kai.tools
 internal val WORD_SPLIT_REGEX = Regex("[\\s!\"#\$%&'()*+,./:;=?@\\[\\]^_`{|}~-]+")
 
 internal fun String.decodeHtmlEntities(): String {
+    // &amp; decodes last: decoding it first would double-decode "&amp;lt;"
+    // into "<" instead of the literal "&lt;" the page shows.
     var out = this
         .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
         .replace("&lt;", "<")
         .replace("&gt;", ">")
         .replace("&quot;", "\"")
         .replace("&#39;", "'")
         .replace("&#x27;", "'")
+        .replace("&amp;", "&")
     out = Regex("&#(\\d+);").replace(out) { match ->
         val code = match.groupValues[1].toIntOrNull()
-        if (code != null && code in 1..0x10FFFF) code.toChar().toString() else match.value
+        if (code != null && code in 1..0x10FFFF) code.toCodePointString() else match.value
     }
     out = Regex("&#x([0-9a-fA-F]+);").replace(out) { match ->
         val code = match.groupValues[1].toIntOrNull(16)
-        if (code != null && code in 1..0x10FFFF) code.toChar().toString() else match.value
+        if (code != null && code in 1..0x10FFFF) code.toCodePointString() else match.value
     }
     return out
+}
+
+/** BMP chars directly, supplementary-plane chars (emoji) as a surrogate pair. */
+internal fun Int.toCodePointString(): String = if (this <= 0xFFFF) {
+    toChar().toString()
+} else {
+    val v = this - 0x10000
+    "${((v shr 10) + 0xD800).toChar()}${((v and 0x3FF) + 0xDC00).toChar()}"
 }
 
 private val BLOCKED_BLOCK_REGEX = Regex(
@@ -98,26 +108,55 @@ internal fun decodeJsString(value: String?): String {
     var i = 1
     while (i < trimmed.length - 1) {
         val c = trimmed[i]
-        if (c == '\\' && i + 1 < trimmed.length - 1) {
-            when (val e = trimmed[i + 1]) {
-                'n' -> out.append('\n')
-
-                't' -> out.append('\t')
-
-                'r' -> out.append('\r')
-
-                'u' -> {
-                    val hex = trimmed.substring(i + 2, (i + 6).coerceAtMost(trimmed.length - 1))
-                    out.append(hex.toIntOrNull(16)?.toChar() ?: e)
-                    i += 4
-                }
-
-                else -> out.append(e)
-            }
-            i += 2
-        } else {
+        if (c != '\\' || i + 1 >= trimmed.length - 1) {
             out.append(c)
             i++
+            continue
+        }
+        when (val e = trimmed[i + 1]) {
+            'n' -> {
+                out.append('\n')
+                i += 2
+            }
+
+            't' -> {
+                out.append('\t')
+                i += 2
+            }
+
+            'r' -> {
+                out.append('\r')
+                i += 2
+            }
+
+            'b' -> {
+                out.append('\b')
+                i += 2
+            }
+
+            'f' -> {
+                out.append('\u000C')
+                i += 2
+            }
+
+            'u' -> {
+                val end = i + 6
+                val code = if (end <= trimmed.length - 1) trimmed.substring(i + 2, end).toIntOrNull(16) else null
+                if (code != null) {
+                    out.append(code.toCodePointString())
+                    i += 6
+                } else {
+                    // Truncated or non-hex \u: keep the backslash literally
+                    // instead of swallowing the next 4 chars.
+                    out.append('\\')
+                    i++
+                }
+            }
+
+            else -> {
+                out.append(e)
+                i += 2
+            }
         }
     }
     return out.toString()
