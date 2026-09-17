@@ -10,8 +10,8 @@ import kotlin.test.assertTrue
  * Priority selection and the per-source bench ([SourceCircuit]).
  *
  * Han queries lead with the engines that are reachable in mainland China
- * (Bing) and demote DuckDuckGo, which needs a VPN there; every other query
- * keeps the long-standing DuckDuckGo-first order.
+ * (Baidu first, then Bing) and demote DuckDuckGo, which needs a VPN there;
+ * every other query keeps the long-standing DuckDuckGo-first order.
  */
 class WebSearchSourcesTest {
 
@@ -22,7 +22,7 @@ class WebSearchSourcesTest {
         assertFalse(containsCjk("shanghai weather"))
         assertFalse(containsCjk("python asyncio"))
 
-        assertEquals("bing", orderedSourceIds("上海天气").first())
+        assertEquals("baidu", orderedSourceIds("上海天气").first())
         assertEquals("ddg-html", orderedSourceIds("shanghai weather").first())
     }
 

@@ -166,14 +166,14 @@ internal fun looksLikeCaptcha(body: String, markers: List<String>): Boolean {
 internal class SourceCircuit(
     private val nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
-    private data class Bench(val consecutiveFailures: Int, val untilMs: Long, val reason: String)
+    private data class Bench(val consecutiveFailures: Int, val lastFailureMs: Long, val untilMs: Long)
 
     private val benched = mutableMapOf<String, Bench>()
     private val mutex = Mutex()
 
     suspend fun isBenched(id: String): Boolean = mutex.withLock {
         val bench = benched[id] ?: return@withLock false
-        if (bench.untilMs in 1 until nowMs()) {
+        if (bench.untilMs <= nowMs()) {
             benched.remove(id)
             return@withLock false
         }
@@ -193,16 +193,17 @@ internal class SourceCircuit(
         val previous = benched[id]
         // A cooldown that already expired starts a fresh run instead of continuing
         // the old one — otherwise an old failure could bench on a single new strike.
-        val consecutive = if (previous == null || previous.untilMs in 1 until now) 1 else previous.consecutiveFailures + 1
+        val expired = previous != null && previous.untilMs > 0 && previous.untilMs <= now
+        val consecutive = if (previous == null || expired) 1 else previous.consecutiveFailures + 1
         val (threshold, benchMs) = when (kind) {
             SourceFailureKind.CAPTCHA -> 1 to CAPTCHA_BENCH_MS
             SourceFailureKind.HTTP -> 2 to HTTP_BENCH_MS
             SourceFailureKind.NETWORK -> 2 to NETWORK_BENCH_MS
         }
         benched[id] = if (consecutive >= threshold) {
-            Bench(consecutive, now + benchMs, kind.name.lowercase())
+            Bench(consecutive, now, now + benchMs)
         } else {
-            Bench(consecutive, 0, "")
+            Bench(consecutive, now, 0)
         }
     }
 
