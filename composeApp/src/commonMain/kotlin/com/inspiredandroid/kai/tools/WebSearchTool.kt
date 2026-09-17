@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalTime::class)
+
 package com.inspiredandroid.kai.tools
 
 import com.inspiredandroid.kai.httpClient
@@ -14,12 +16,20 @@ import io.ktor.http.isSuccess
 import kai.composeapp.generated.resources.Res
 import kai.composeapp.generated.resources.tool_web_search_description
 import kai.composeapp.generated.resources.tool_web_search_name
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlin.time.Clock
+import kotlin.time.ExperimentalTime
 
 private const val MAX_RESULTS = 5
 
@@ -27,7 +37,25 @@ private const val MAX_RESULTS = 5
 private const val MAX_COUNT = 10
 
 /** Per-source budget. All sources race in parallel, so the worst case stays near this. */
-private const val SOURCE_TIMEOUT_MS = 12_000L
+private const val SOURCE_TIMEOUT_MS = 10_000L
+
+/**
+ * The first [PRIMARY_GROUP_SIZE] sources in priority order form the primary group:
+ * the reader waits up to [PRIMARY_BUDGET_MS] for them and returns the best of the
+ * group as soon as it can't be beaten, instead of awaiting every source. The tail
+ * sources keep running in the background and only matter when the group fails.
+ */
+private const val PRIMARY_GROUP_SIZE = 3
+private const val PRIMARY_BUDGET_MS = 6_000L
+
+/** After a primary result arrives, higher-priority primary sources get this long to beat it. */
+private const val GRACE_AFTER_PRIMARY_MS = 1_500L
+
+/** Whole-chain cap, measured from the start; the tail phase gets whatever is left. */
+private const val CHAIN_BUDGET_MS = 12_000L
+
+/** Bounded wait for the instant answer once a result list is already in hand. */
+private const val ANSWER_BUDGET_MS = 4_000L
 
 /** Source ids used in `sources` / `source_status` telemetry. */
 private const val SRC_INSTANT = "ddg-instant"
@@ -35,6 +63,11 @@ private const val SRC_DDG_HTML = "ddg-html"
 private const val SRC_DDG_LITE = "ddg-lite"
 private const val SRC_BING = "bing"
 private const val SRC_MARGINALIA = "marginalia"
+private const val SRC_BAIDU = "baidu"
+private const val SRC_SO360 = "so360"
+private const val SRC_SOGOU = "sogou"
+private const val SRC_BAIDU_NEWS = "baidu-news"
+private const val SRC_YANDEX = "yandex"
 
 /** `time` argument → DuckDuckGo `df` param. Null means unfiltered. */
 internal fun timeFilterParam(time: String?): String? = when (time?.trim()?.lowercase()) {
@@ -47,7 +80,147 @@ internal fun timeFilterParam(time: String?): String? = when (time?.trim()?.lower
 /** `count` argument → clamped result limit. */
 internal fun clampCount(count: Int?): Int = (count ?: MAX_RESULTS).coerceIn(1, MAX_COUNT)
 
-object WebSearchTool : Tool {
+/**
+ * True when [text] contains Han characters, which selects the China-first source
+ * priority. Deliberately query-only: a Chinese user asking an English question
+ * gets the global order (Bing first), which is both reachable and better for
+ * English, so no locale plumbing is needed.
+ */
+internal fun containsCjk(text: String): Boolean = text.any {
+    it.code in 0x4E00..0x9FFF || it.code in 0x3400..0x4DBF || it.code in 0xF900..0xFAFF
+}
+
+/**
+ * Source priority. China-first for Han queries: the engines reachable there lead
+ * and DuckDuckGo (unreachable without a VPN) drops behind; the global order keeps
+ * the long-standing DuckDuckGo-first behavior for everyone else. Sources that
+ * turn out to be unreachable are benched by [SourceCircuit] and skipped wherever
+ * they sit.
+ */
+internal val SOURCE_PRIORITY_GLOBAL = listOf(
+    SRC_DDG_HTML,
+    SRC_DDG_LITE,
+    SRC_BING,
+    SRC_MARGINALIA,
+    SRC_BAIDU,
+    SRC_SOGOU,
+    SRC_SO360,
+    SRC_YANDEX,
+)
+internal val SOURCE_PRIORITY_CJK = listOf(
+    SRC_BAIDU,
+    SRC_BING,
+    SRC_SOGOU,
+    SRC_SO360,
+    SRC_DDG_HTML,
+    SRC_DDG_LITE,
+    SRC_MARGINALIA,
+    SRC_YANDEX,
+)
+
+/**
+ * Source order for a query. When [includeNews] is set (the caller passed a
+ * `time` filter), the Baidu News RSS feed slots in right after the leading
+ * source — it is the one source whose results are inherently recency-sorted.
+ */
+internal fun orderedSourceIds(query: String, includeNews: Boolean = false): List<String> {
+    val base = if (containsCjk(query)) SOURCE_PRIORITY_CJK else SOURCE_PRIORITY_GLOBAL
+    if (!includeNews || SRC_BAIDU_NEWS in base) return base
+    return base.take(1) + SRC_BAIDU_NEWS + base.drop(1)
+}
+
+/** Why a source failed; decides how long it sits out. */
+internal enum class SourceFailureKind { NETWORK, HTTP, CAPTCHA }
+
+/** Non-2xx, carrying the status so telemetry can say `http 403` rather than a bare failure. */
+internal class HttpStatusFailure(val status: Int) : Exception("http $status")
+
+/** A verification/interstitial page instead of results. */
+internal class CaptchaFailure : Exception("captcha")
+
+internal fun classifyFailure(e: Exception): SourceFailureKind = when (e) {
+    is CaptchaFailure -> SourceFailureKind.CAPTCHA
+    is HttpStatusFailure -> SourceFailureKind.HTTP
+    else -> SourceFailureKind.NETWORK
+}
+
+/** Markers that identify an anti-bot interstitial rather than a result page. */
+internal val DEFAULT_CAPTCHA_MARKERS = listOf(
+    "unusual traffic",
+    "verify you are human",
+    "our systems have detected",
+)
+
+/** True when [body] looks like an anti-bot page for the given engine. */
+internal fun looksLikeCaptcha(body: String, markers: List<String>): Boolean {
+    val head = body.take(20_000).lowercase()
+    return markers.any { head.contains(it.lowercase()) }
+}
+
+/**
+ * Process-lifetime per-source bench: a source that just proved unreachable is
+ * skipped instead of costing every later search its full timeout. Kept in
+ * memory on purpose — an app restart retries everything, so a network change
+ * (VPN switched on, different Wi-Fi) recovers without user action.
+ */
+internal class SourceCircuit(
+    private val nowMs: () -> Long = { Clock.System.now().toEpochMilliseconds() },
+) {
+    private data class Bench(val consecutiveFailures: Int, val untilMs: Long, val reason: String)
+
+    private val benched = mutableMapOf<String, Bench>()
+    private val mutex = Mutex()
+
+    suspend fun isBenched(id: String): Boolean = mutex.withLock {
+        val bench = benched[id] ?: return@withLock false
+        if (bench.untilMs in 1 until nowMs()) {
+            benched.remove(id)
+            return@withLock false
+        }
+        true
+    }
+
+    suspend fun remainingMs(id: String): Long = mutex.withLock {
+        (benched[id]?.untilMs ?: 0L).minus(nowMs()).coerceAtLeast(0L)
+    }
+
+    suspend fun recordSuccess(id: String) = mutex.withLock {
+        benched.remove(id)
+    }
+
+    suspend fun recordFailure(id: String, kind: SourceFailureKind) = mutex.withLock {
+        val now = nowMs()
+        val previous = benched[id]
+        // A cooldown that already expired starts a fresh run instead of continuing
+        // the old one — otherwise an old failure could bench on a single new strike.
+        val consecutive = if (previous == null || previous.untilMs in 1 until now) 1 else previous.consecutiveFailures + 1
+        val (threshold, benchMs) = when (kind) {
+            SourceFailureKind.CAPTCHA -> 1 to CAPTCHA_BENCH_MS
+            SourceFailureKind.HTTP -> 2 to HTTP_BENCH_MS
+            SourceFailureKind.NETWORK -> 2 to NETWORK_BENCH_MS
+        }
+        benched[id] = if (consecutive >= threshold) {
+            Bench(consecutive, now + benchMs, kind.name.lowercase())
+        } else {
+            Bench(consecutive, 0, "")
+        }
+    }
+
+    companion object {
+        private const val NETWORK_BENCH_MS = 10 * 60 * 1000L
+        private const val HTTP_BENCH_MS = 30 * 60 * 1000L
+        private const val CAPTCHA_BENCH_MS = 60 * 60 * 1000L
+    }
+}
+
+/** One searchable engine behind [WebSearchTool]. */
+internal class SearchSource(
+    val id: String,
+    val captchaMarkers: List<String> = DEFAULT_CAPTCHA_MARKERS,
+    val search: suspend (encodedQuery: String, df: String?, count: Int) -> List<Map<String, String>>,
+)
+
+object WebSearchTool {
     private val liteLinkRegex = Regex("""<a[^>]+class=['"]result-link['"][^>]*>([\s\S]*?)</a>""")
     private val liteHrefRegex = Regex("""href=['"]([^'"]*?)['"]""")
     private val liteSnippetRegex = Regex("""<td[^>]+class=['"]result-snippet['"][^>]*>([\s\S]*?)</td>""")
@@ -70,15 +243,45 @@ object WebSearchTool : Tool {
     // snippet is the following `<p class="mt-2 …">` paragraph.
     private val margAnchorRegex = Regex("""<a\s[^>]*href="(https?://[^"]+)"[^>]*>""")
 
+    // Baidu: organic blocks carry `class="result c-container"` (ads use
+    // `result-op`, which the split string does not match); the title anchor sits
+    // inside the block's <h3>, snippets in a `content-right*` span or
+    // `c-abstract` div. Links are `/link?url=` redirects, returned as-is —
+    // fetch_url follows redirects.
+    private val baiduTitleRegex = Regex("""<h3[^>]*>\s*<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>""")
+    private val baiduSnippetRegex = Regex("""<(?:span|div)[^>]*class="[^"]*(?:content-right|c-abstract)[^"]*"[^>]*>([\s\S]*?)</(?:span|div)>""")
+
+    // Sogou: result wrappers are `vrwrap` blocks; the title is the `vr-title`
+    // heading anchor and the snippet one of the text layout classes.
+    private val sogouTitleRegex = Regex("""<h3[^>]*class="[^"]*vr-title[^"]*"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>""")
+    private val sogouSnippetRegex = Regex("""<(?:div|p|span)[^>]*class="[^"]*(?:text-layout|str_info|space-txt|str-text)[^"]*"[^>]*>([\s\S]*?)</(?:div|p|span)>""")
+
+    // 360 (so.com): `res-list` result items with an `res-title` anchor and an
+    // `res-desc` paragraph.
+    private val so360TitleRegex = Regex("""<h3[^>]*class="[^"]*res-title[^"]*"[^>]*>[\s\S]*?<a[^>]+href="([^"]+)"[^>]*>([\s\S]*?)</a>""")
+    private val so360SnippetRegex = Regex("""<p[^>]*class="[^"]*res-desc[^"]*"[^>]*>([\s\S]*?)</p>""")
+
+    // Yandex: OrganicTitle anchors, scanned as tags so the attribute order in
+    // the anchor doesn't matter; the snippet is the next OrganicText span.
+    private val yandexAnchorRegex = Regex("""<a\s[^>]*class="[^"]*(?:OrganicTitle-Link|organic__url)[^"]*"[^>]*>""")
+    private val yandexSnippetRegex = Regex("""<span[^>]*class="[^"]*OrganicText[^"]*"[^>]*>([\s\S]*?)</span>""")
+    private val httpHrefRegex = Regex("""href="(https?://[^"]+)""")
+
+    // Baidu News RSS: plain XML `<item>` rows.
+    private val rssItemRegex = Regex("""<item>([\s\S]*?)</item>""")
+    private val rssTitleRegex = Regex("""<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</title>""")
+    private val rssLinkRegex = Regex("""<link>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</link>""")
+    private val rssDescriptionRegex = Regex("""<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</description>""")
+
     private val json = Json { ignoreUnknownKeys = true }
 
     override val schema = ToolSchema(
         name = "web_search",
-        description = "Search the web for current information. Returns a direct answer when one is available, plus titles, URLs, and snippets. Before answering questions about recent events, news, current prices, weather, or anything time-sensitive, search first. Also use this when you're unsure about facts or the user asks you to look something up. Pass count (1-10) to control result volume and time (day/week/month) to restrict recency — time applies to the DuckDuckGo sources; use it for news and other time-sensitive queries.",
+        description = "Search the web for current information. Returns a direct answer when one is available, plus titles, URLs, and snippets. Before answering questions about recent events, news, current prices, weather, or anything time-sensitive, search first. Also use this when you're unsure about facts or the user asks you to look something up. Pass count (1-10) to control result volume and time (day/week/month) to restrict recency (covers DuckDuckGo, Bing and the Baidu news feed). Queries in Chinese search Baidu, Bing, Sogou and 360 first; DuckDuckGo needs a VPN in mainland China and is skipped when unreachable.",
         parameters = mapOf(
             "query" to ParameterSchema("string", "The search query", true),
             "count" to ParameterSchema("integer", "Max results to return, 1-10 (default 5)", false),
-            "time" to ParameterSchema("string", "Recency filter: any, day, week, month (default any). Applies to DuckDuckGo results.", false),
+            "time" to ParameterSchema("string", "Recency filter: any, day, week, month (default any). Applies to DuckDuckGo, Bing and the Baidu news feed.", false),
         ),
     )
 
@@ -87,6 +290,22 @@ object WebSearchTool : Tool {
             requestTimeoutMillis = 15_000
         }
     }
+
+    /** Process-lifetime bench list; shared by every search this process makes. */
+    private val circuit = SourceCircuit()
+
+    /** All engines this tool can query. Adding one means adding it here and to a priority list. */
+    private val sources: List<SearchSource> = listOf(
+        SearchSource(SRC_DDG_HTML) { q, df, count -> searchDdgHtml(q, df, count) },
+        SearchSource(SRC_DDG_LITE) { q, df, count -> searchDdgLite(q, df, count) },
+        SearchSource(SRC_BING) { q, df, count -> searchBingHtml(q, df, count) },
+        SearchSource(SRC_MARGINALIA) { q, _, count -> searchMarginalia(q, count) },
+        SearchSource(SRC_BAIDU, captchaMarkers = BAIDU_CAPTCHA_MARKERS) { q, _, count -> searchBaidu(q, count) },
+        SearchSource(SRC_SOGOU, captchaMarkers = SOGOU_CAPTCHA_MARKERS) { q, _, count -> searchSogou(q, count) },
+        SearchSource(SRC_SO360, captchaMarkers = SO360_CAPTCHA_MARKERS) { q, _, count -> searchSo360(q, count) },
+        SearchSource(SRC_BAIDU_NEWS, captchaMarkers = BAIDU_CAPTCHA_MARKERS) { q, _, count -> searchBaiduNews(q, count) },
+        SearchSource(SRC_YANDEX, captchaMarkers = YANDEX_CAPTCHA_MARKERS) { q, _, count -> searchYandex(q, count) },
+    )
 
     override suspend fun execute(args: Map<String, Any>): Any {
         val query = args["query"]?.toString()?.trim()?.takeIf { it.isNotEmpty() }
@@ -116,47 +335,139 @@ object WebSearchTool : Tool {
         }
     }
 
+    /** Source order for this query, engine objects in priority order. */
+    private fun orderedSources(query: String, includeNews: Boolean): List<SearchSource> {
+        val byId = sources.associateBy { it.id }
+        return orderedSourceIds(query, includeNews).mapNotNull { byId[it] }
+    }
+
     /**
-     * No-API-key chain, raced in parallel: DuckDuckGo (instant answer + html +
-     * lite), then Bing HTML, then Marginalia. The old code walked the chain
-     * sequentially (answer+html → lite → bing → marginalia), so a slow first
-     * source could eat the whole tool timeout before the fallbacks were even
-     * tried. Now every source gets the same 12s budget concurrently and the
-     * first non-empty source in priority order wins, so worst case stays flat.
+     * Races the sources in priority order without waiting for all of them.
+     *
+     * The primary group (the first [PRIMARY_GROUP_SIZE] sources) gets
+     * [PRIMARY_BUDGET_MS]; the best result that can no longer be beaten is
+     * returned, with higher-priority group members given [GRACE_AFTER_PRIMARY_MS]
+     * to arrive. When the group yields nothing, the tail sources get whatever
+     * remains of [CHAIN_BUDGET_MS]. Benched sources are skipped entirely, and
+     * every straggler is cancelled on return — a dead engine never costs more
+     * than the budget of the phase it was in.
      */
-    private suspend fun searchChain(query: String, count: Int, time: String?): Map<String, Any> = coroutineScope {
+    private suspend fun searchChain(query: String, count: Int, time: String?): Map<String, Any> {
         val encoded = query.encodeURLQueryComponent()
         val df = timeFilterParam(time)
-        val instant = async { loadAnswer(encoded) }
-        val html = async { loadList(SRC_DDG_HTML) { searchDdgHtml(encoded, df, count) } }
-        val lite = async { loadList(SRC_DDG_LITE) { searchDdgLite(encoded, df, count) } }
-        val bing = async { loadList(SRC_BING) { searchBingHtml(encoded, count) } }
-        val marginalia = async { loadList(SRC_MARGINALIA) { searchMarginalia(encoded, count) } }
+        val ordered = orderedSources(query, includeNews = time != null)
 
-        val (answer, answerStatus) = instant.await()
-        val lists = listOf(html.await(), lite.await(), bing.await(), marginalia.await())
-        val winner = lists.firstOrNull { it.items.isNotEmpty() }
-        val results = winner?.items.orEmpty()
+        val skipped = mutableListOf<Pair<SearchSource, Long>>()
+        val active = mutableListOf<SearchSource>()
+        for (source in ordered) {
+            if (circuit.isBenched(source.id)) {
+                skipped += source to circuit.remainingMs(source.id)
+            } else {
+                active += source
+            }
+        }
+
+        return coroutineScope {
+            val channel = Channel<Pair<Int, SourceLoad>>(Channel.UNLIMITED)
+            val jobs = active.mapIndexed { index, source ->
+                launch { channel.send(index to loadList(source, encoded, df, count)) }
+            }
+            val answerTask: Deferred<Pair<Map<String, String>?, String>>? = if (circuit.isBenched(SRC_INSTANT)) {
+                null
+            } else {
+                async { loadAnswer(encoded) }
+            }
+
+            try {
+                val completed = linkedMapOf<Int, SourceLoad>()
+                val startedAt = Clock.System.now().toEpochMilliseconds()
+                val primaryBudgetDeadline = startedAt + PRIMARY_BUDGET_MS
+                var graceDeadline: Long? = null
+
+                while (completed.size < active.size) {
+                    val deadline = graceDeadline ?: primaryBudgetDeadline
+                    val remaining = deadline - Clock.System.now().toEpochMilliseconds()
+                    if (remaining <= 0) break
+                    val item = withTimeoutOrNull(remaining) { channel.receive() } ?: break
+                    completed[item.first] = item.second
+                    val best = bestCompletedIndex(completed, active) ?: continue
+                    val higherPriorityPending = (0 until best).any { it !in completed && it < PRIMARY_GROUP_SIZE }
+                    if (!higherPriorityPending) break
+                    if (graceDeadline == null) {
+                        graceDeadline = Clock.System.now().toEpochMilliseconds() + GRACE_AFTER_PRIMARY_MS
+                    }
+                }
+
+                // Nothing usable yet: wait out the tail sources within the chain budget.
+                if (bestCompletedIndex(completed, active) == null && completed.size < active.size) {
+                    val remaining = CHAIN_BUDGET_MS - (Clock.System.now().toEpochMilliseconds() - startedAt)
+                    if (remaining > 0) {
+                        withTimeoutOrNull(remaining) {
+                            while (completed.size < active.size) {
+                                val item = channel.receive()
+                                completed[item.first] = item.second
+                            }
+                        }
+                    }
+                }
+
+                val answerResult = answerTask?.let { withTimeoutOrNull(ANSWER_BUDGET_MS) { it.await() } }
+                val answerStatus = when {
+                    answerTask == null -> "skipped: benched"
+                    answerResult != null -> answerResult.second
+                    else -> "pending"
+                }
+
+                buildSearchResponse(active, completed, skipped, answerResult?.first, answerStatus)
+            } finally {
+                jobs.forEach { it.cancel() }
+                answerTask?.cancel()
+                channel.close()
+            }
+        }
+    }
+
+    /**
+     * Index of the highest-priority completed source with results, or null when
+     * none has results yet. Timer-only entries (empty/failed) don't win but do
+     * count as settled for the higher-priority wait.
+     */
+    private fun bestCompletedIndex(completed: Map<Int, SourceLoad>, active: List<SearchSource>): Int? = active.indices.firstOrNull { index ->
+        completed[index]?.items?.isNotEmpty() == true
+    }
+
+    private fun buildSearchResponse(
+        active: List<SearchSource>,
+        completed: Map<Int, SourceLoad>,
+        skipped: List<Pair<SearchSource, Long>>,
+        answer: Map<String, String>?,
+        answerStatus: String,
+    ): Map<String, Any> {
+        val winnerIndex = bestCompletedIndex(completed, active)
+        val winner = winnerIndex?.let { active[it] }
+        val results = winnerIndex?.let { completed[it]?.items }.orEmpty()
 
         if (results.isNotEmpty() || answer != null) {
             val sources = buildList {
                 if (answer != null) add(SRC_INSTANT)
-                if (winner != null) add(winner.name)
+                if (winner != null) add(winner.id)
             }
-            return@coroutineScope buildMap<String, Any> {
+            return buildMap<String, Any> {
                 if (answer != null) put("answer", answer)
                 put("results", results)
                 put("sources", sources)
             }.let { mapOf("success" to true) + it }
         }
+
         // Nothing anywhere: report per-source status instead of a bare "no
         // results", so parser rot (a source suddenly returning empty/failed
         // on every query) is distinguishable from a genuinely empty web.
         val status = buildMap<String, String> {
             put(SRC_INSTANT, answerStatus)
-            for (load in lists) put(load.name, load.status)
+            for (load in completed.values) put(load.name, load.status)
+            for ((source, remainingMs) in skipped) put(source.id, "skipped: benched (~${remainingMs / 1000}s)")
         }
-        mapOf(
+        return mapOf(
             "success" to true,
             "results" to emptyList<Any>(),
             "message" to "No results found",
@@ -166,19 +477,35 @@ object WebSearchTool : Tool {
 
     private suspend fun loadAnswer(encodedQuery: String): Pair<Map<String, String>?, String> = try {
         val answer = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { fetchInstantAnswer(encodedQuery) }
-        if (answer != null) answer to "ok" else null to "empty"
+        if (answer != null) {
+            circuit.recordSuccess(SRC_INSTANT)
+            answer to "ok"
+        } else {
+            null to "empty"
+        }
+    } catch (e: CancellationException) {
+        // Early return cancels stragglers; that is not a source failure.
+        throw e
     } catch (e: Exception) {
+        circuit.recordFailure(SRC_INSTANT, classifyFailure(e))
         null to "failed: ${shortError(e)}"
     }
 
-    private suspend fun loadList(name: String, block: suspend () -> List<Map<String, String>>): SourceLoad {
-        return try {
-            val items = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { block() }
-                ?: return SourceLoad(name, emptyList(), "timeout after ${SOURCE_TIMEOUT_MS / 1000}s")
-            SourceLoad(name, items, null)
-        } catch (e: Exception) {
-            SourceLoad(name, emptyList(), shortError(e))
+    private suspend fun loadList(source: SearchSource, encoded: String, df: String?, count: Int): SourceLoad = try {
+        val items = withTimeoutOrNull(SOURCE_TIMEOUT_MS) { source.search(encoded, df, count) }
+        if (items == null) {
+            circuit.recordFailure(source.id, SourceFailureKind.NETWORK)
+            SourceLoad(source.id, emptyList(), "timeout after ${SOURCE_TIMEOUT_MS / 1000}s")
+        } else {
+            circuit.recordSuccess(source.id)
+            SourceLoad(source.id, items, null)
         }
+    } catch (e: CancellationException) {
+        // Early return cancels stragglers; that is not a source failure.
+        throw e
+    } catch (e: Exception) {
+        circuit.recordFailure(source.id, classifyFailure(e))
+        SourceLoad(source.id, emptyList(), shortError(e))
     }
 
     private fun shortError(e: Exception): String = (e.message ?: e::class.simpleName ?: "error").take(120)
@@ -206,7 +533,7 @@ object WebSearchTool : Tool {
             append("https://html.duckduckgo.com/html/?q=$encodedQuery")
             if (df != null) append("&df=$df")
         }
-        val html = getText(url, "Mozilla/5.0 (compatible; Kai/1.0)")
+        val html = getText(url, "Mozilla/5.0 (compatible; Kai/1.0)", DDG_CAPTCHA_MARKERS)
         return parseDdgHtmlResults(html, count)
     }
 
@@ -239,6 +566,7 @@ object WebSearchTool : Tool {
         val body = getText(
             "https://api.duckduckgo.com/?q=$encodedQuery&format=json&no_html=1&skip_disambig=1",
             "Mozilla/5.0 (compatible; Kai/1.0)",
+            DDG_CAPTCHA_MARKERS,
         )
         return parseInstantAnswer(body)
     }
@@ -248,13 +576,27 @@ object WebSearchTool : Tool {
      * page / captcha / outage surfaces as `failed: http 403` in source_status
      * instead of silently parsing to zero results ("empty").
      */
-    private suspend fun getText(url: String, userAgent: String): String {
+    private suspend fun getText(
+        url: String,
+        userAgent: String,
+        captchaMarkers: List<String>,
+        cookie: String? = null,
+    ): String {
         val response: HttpResponse = client.get(url) {
             header("User-Agent", userAgent)
+            cookie?.let { header("Cookie", it) }
         }
-        if (!response.status.isSuccess()) throw Exception("http ${response.status.value}")
-        return response.bodyAsText()
+        if (!response.status.isSuccess()) throw HttpStatusFailure(response.status.value)
+        val body = response.bodyAsText()
+        if (looksLikeCaptcha(body, captchaMarkers)) throw CaptchaFailure()
+        return body
     }
+
+    /** `name=value; name2=value2` from a response's Set-Cookie headers, or null. */
+    private fun cookieHeader(response: HttpResponse): String? = response.headers.getAll("Set-Cookie")
+        ?.mapNotNull { it.substringBefore(';').trim().takeIf { part -> part.isNotBlank() } }
+        ?.joinToString("; ")
+        ?.takeIf { it.isNotBlank() }
 
     private fun parseResults(html: String, maxResults: Int): List<Map<String, String>> {
         val results = mutableListOf<Map<String, String>>()
@@ -295,19 +637,162 @@ object WebSearchTool : Tool {
             append("https://lite.duckduckgo.com/lite/?q=$encodedQuery")
             if (df != null) append("&df=$df")
         }
-        val html = getText(url, "Mozilla/5.0 (compatible; Kai/1.0)")
+        val html = getText(url, "Mozilla/5.0 (compatible; Kai/1.0)", DDG_CAPTCHA_MARKERS)
         return parseResults(html, count)
     }
 
-    private suspend fun searchBingHtml(encodedQuery: String, count: Int): List<Map<String, String>> {
-        val html = getText("https://www.bing.com/search?q=$encodedQuery", DESKTOP_UA)
+    private suspend fun searchBingHtml(encodedQuery: String, df: String?, count: Int): List<Map<String, String>> {
+        // Bing's freshness filter: ez1 = past 24h, ez2 = past week, ez3 = past month.
+        val freshness = when (df) {
+            "d" -> "&filters=ex1%3A%22ez1%22"
+            "w" -> "&filters=ex1%3A%22ez2%22"
+            "m" -> "&filters=ex1%3A%22ez3%22"
+            else -> ""
+        }
+        val html = getText("https://www.bing.com/search?q=$encodedQuery$freshness", DESKTOP_UA, BING_CAPTCHA_MARKERS)
         return parseBingResults(html, count)
     }
 
     private suspend fun searchMarginalia(encodedQuery: String, count: Int): List<Map<String, String>> {
-        val html = getText("https://marginalia-search.com/search?query=$encodedQuery", DESKTOP_UA)
+        val html = getText("https://marginalia-search.com/search?query=$encodedQuery", DESKTOP_UA, DEFAULT_CAPTCHA_MARKERS)
         return parseMarginaliaResults(html, count)
     }
+
+    // region China-first engines
+
+    internal fun parseBaiduResults(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
+        val results = mutableListOf<Map<String, String>>()
+        for (segment in html.split("class=\"result c-container").drop(1)) {
+            if (results.size >= maxResults) break
+            val titleMatch = baiduTitleRegex.find(segment) ?: continue
+            val url = titleMatch.groupValues[1].replace("&amp;", "&").trim()
+            val title = titleMatch.groupValues[2].stripHtml().trim()
+            if (url.isEmpty() || title.isEmpty()) continue
+            val snippet = baiduSnippetRegex.find(segment)?.groupValues?.get(1)?.stripHtml()?.trim().orEmpty()
+            results.add(mapOf("title" to title, "url" to url, "snippet" to snippet))
+        }
+        return results
+    }
+
+    private suspend fun searchBaidu(encodedQuery: String, count: Int): List<Map<String, String>> {
+        val html = getText("https://www.baidu.com/s?wd=$encodedQuery&rn=$count", DESKTOP_UA, BAIDU_CAPTCHA_MARKERS)
+        return parseBaiduResults(html, count)
+    }
+
+    internal fun parseSogouResults(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
+        val results = mutableListOf<Map<String, String>>()
+        for (segment in html.split("class=\"vrwrap").drop(1)) {
+            if (results.size >= maxResults) break
+            val titleMatch = sogouTitleRegex.find(segment) ?: continue
+            val url = titleMatch.groupValues[1].replace("&amp;", "&").trim()
+            val title = titleMatch.groupValues[2].stripHtml().trim()
+            if (url.isEmpty() || title.isEmpty()) continue
+            val snippet = sogouSnippetRegex.find(segment)?.groupValues?.get(1)?.stripHtml()?.trim().orEmpty()
+            results.add(mapOf("title" to title, "url" to url, "snippet" to snippet))
+        }
+        return results
+    }
+
+    private suspend fun searchSogou(encodedQuery: String, count: Int): List<Map<String, String>> {
+        val html = getText("https://www.sogou.com/web?query=$encodedQuery", DESKTOP_UA, SOGOU_CAPTCHA_MARKERS, cookie = sogouCookie())
+        return parseSogouResults(html, count)
+    }
+
+    /**
+     * Sogou intermittently wants a session cookie from its homepage before it
+     * serves results. Fetched once per process; the homepage response is also
+     * where a redirected/verification response would surface first.
+     */
+    private var sogouCookieValue: String? = null
+    private var sogouCookieFetched = false
+
+    private suspend fun sogouCookie(): String? {
+        if (sogouCookieFetched) return sogouCookieValue
+        sogouCookieFetched = true
+        sogouCookieValue = try {
+            val response = client.get("https://www.sogou.com/") { header("User-Agent", DESKTOP_UA) }
+            if (!response.status.isSuccess()) {
+                null
+            } else {
+                val body = response.bodyAsText()
+                if (looksLikeCaptcha(body, SOGOU_CAPTCHA_MARKERS)) null else cookieHeader(response)
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+        return sogouCookieValue
+    }
+
+    internal fun parseSo360Results(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
+        val results = mutableListOf<Map<String, String>>()
+        for (segment in html.split("class=\"res-list").drop(1)) {
+            if (results.size >= maxResults) break
+            val titleMatch = so360TitleRegex.find(segment) ?: continue
+            val url = titleMatch.groupValues[1].replace("&amp;", "&").trim()
+            val title = titleMatch.groupValues[2].stripHtml().trim()
+            if (url.isEmpty() || title.isEmpty()) continue
+            val snippet = so360SnippetRegex.find(segment)?.groupValues?.get(1)?.stripHtml()?.trim().orEmpty()
+            results.add(mapOf("title" to title, "url" to url, "snippet" to snippet))
+        }
+        return results
+    }
+
+    private suspend fun searchSo360(encodedQuery: String, count: Int): List<Map<String, String>> {
+        val html = getText("https://www.so.com/s?q=$encodedQuery", DESKTOP_UA, SO360_CAPTCHA_MARKERS)
+        return parseSo360Results(html, count)
+    }
+
+    internal fun parseYandexResults(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
+        val results = mutableListOf<Map<String, String>>()
+        for (match in yandexAnchorRegex.findAll(html)) {
+            if (results.size >= maxResults) break
+            val url = httpHrefRegex.find(match.value)?.groupValues?.get(1)?.trim() ?: continue
+            val textStart = match.range.last + 1
+            val textEnd = html.indexOf("</a>", textStart)
+            if (textEnd < 0) continue
+            val title = html.substring(textStart, textEnd).stripHtml().trim()
+            if (url.isEmpty() || title.isEmpty()) continue
+            // Snippet: an OrganicText span shortly after the title anchor.
+            val snippet = html.substring(textEnd).take(2000).let { window ->
+                yandexSnippetRegex.find(window)?.groupValues?.get(1)?.stripHtml()?.trim().orEmpty()
+            }
+            results.add(mapOf("title" to title, "url" to url, "snippet" to snippet))
+        }
+        return results
+    }
+
+    private suspend fun searchYandex(encodedQuery: String, count: Int): List<Map<String, String>> {
+        val html = getText("https://yandex.com/search/?text=$encodedQuery", DESKTOP_UA, YANDEX_CAPTCHA_MARKERS)
+        return parseYandexResults(html, count)
+    }
+
+    /**
+     * Baidu News RSS — inherently recency-sorted, so it only joins a search that
+     * asked for a `time` filter. xml parsing is regex-based like everything else.
+     */
+    internal fun parseBaiduNewsRss(xml: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
+        val results = mutableListOf<Map<String, String>>()
+        for (item in rssItemRegex.findAll(xml)) {
+            if (results.size >= maxResults) break
+            val block = item.groupValues[1]
+            val title = rssTitleRegex.find(block)?.groupValues?.get(1)?.decodeHtmlEntities()?.trim().orEmpty()
+            val url = rssLinkRegex.find(block)?.groupValues?.get(1)?.trim().orEmpty()
+            val snippet = rssDescriptionRegex.find(block)?.groupValues?.get(1)?.decodeHtmlEntities()?.trim().orEmpty()
+            if (title.isEmpty() || url.isEmpty()) continue
+            results.add(mapOf("title" to title, "url" to url, "snippet" to snippet))
+        }
+        return results
+    }
+
+    private suspend fun searchBaiduNews(encodedQuery: String, count: Int): List<Map<String, String>> {
+        val url = "https://news.baidu.com/ns?word=$encodedQuery&tn=newsrss&sr=0&cl=2&rn=$count&ct=0"
+        val xml = getText(url, "Mozilla/5.0 (compatible; Kai/1.0)", BAIDU_CAPTCHA_MARKERS)
+        return parseBaiduNewsRss(xml, count)
+    }
+
+    // endregion
 
     internal fun parseBingResults(html: String, maxResults: Int = MAX_RESULTS): List<Map<String, String>> {
         val results = mutableListOf<Map<String, String>>()
@@ -450,4 +935,16 @@ object WebSearchTool : Tool {
         nameRes = Res.string.tool_web_search_name,
         descriptionRes = Res.string.tool_web_search_description,
     )
+
+    /**
+     * Captcha markers are engine-specific strings that only appear on the
+     * engine's own interstitial pages, so a search *for* the word "captcha"
+     * can't be mistaken for one.
+     */
+    private val DDG_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("bots use duckduckgo")
+    private val BING_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS
+    private val BAIDU_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("wappass.baidu.com", "百度安全验证", "请完成安全验证")
+    private val SOGOU_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("antispider", "请输入验证码", "访问过于频繁")
+    private val SO360_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("访问验证", "请输入验证码")
+    private val YANDEX_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("showcaptcha", "not a robot")
 }
