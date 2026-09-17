@@ -46,7 +46,7 @@ object WebActTools {
                 "node_id" to ParameterSchema("string", "Element id from snapshot, e.g. e3 (tap/input)", false),
                 "text" to ParameterSchema("string", "Text to type (input)", false),
                 "submit" to ParameterSchema("boolean", "Press Enter after typing, e.g. to submit a search (input, default false)", false),
-                "expect" to ParameterSchema("string", "Skip the tap unless the element still shows this text (tap)", false),
+                "expect" to ParameterSchema("string", "Skip the action unless the element still shows this text (tap, input)", false),
                 "direction" to ParameterSchema("string", "up|down for scroll (default down)", false),
                 "distance" to ParameterSchema("integer", "Scroll pixels (default 600)", false),
                 "timeout" to ParameterSchema("integer", "Timeout in seconds for goto (default 30, max 60)", false),
@@ -85,9 +85,12 @@ object WebActTools {
                             put("count", elements.size)
                             put(
                                 "elements",
-                                elements.mapIndexed { index, element ->
+                                elements.map { element ->
                                     buildMap<String, String> {
-                                        put("id", "e$index")
+                                        // The snapshot's own index, not the row position:
+                                        // snapshot skips hidden/tiny elements, so a
+                                        // position-based id would address the wrong element.
+                                        put("id", "e${element.index}")
                                         put("tag", element.tag)
                                         if (element.text.isNotEmpty()) put("text", element.text)
                                         if (element.type.isNotEmpty()) put("type", element.type)
@@ -123,9 +126,13 @@ object WebActTools {
                         val text = args["text"]?.toString()
                             ?: return mapOf("success" to false, "error" to "text is required for input")
                         val submit = (args["submit"] as? Boolean) ?: false
-                        val result = sessions.input(sessionId, index, text, submit)
+                        val result = sessions.input(sessionId, index, text, submit, args["expect"]?.toString().orEmpty())
                         if (!result.ok) {
-                            return mapOf("success" to false, "error" to "No fillable element e$index. Run snapshot first and use a fresh id.")
+                            return if (result.text.isNotEmpty()) {
+                                mapOf("success" to false, "error" to "Element changed (now showing: ${result.text}). Run snapshot again for fresh ids.")
+                            } else {
+                                mapOf("success" to false, "error" to "No fillable element e$index. Run snapshot first and use a fresh id.")
+                            }
                         }
                         mapOf("success" to true, "value" to result.text)
                     }

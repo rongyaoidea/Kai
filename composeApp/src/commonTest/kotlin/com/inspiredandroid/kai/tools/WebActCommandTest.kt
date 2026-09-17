@@ -33,8 +33,18 @@ class WebActCommandTest {
     fun `parses quoted and bare action results`() {
         assertEquals(WebActCommand.WebActionResult(true, "Go"), WebActCommand.parseActionResult("""{"ok":true,"text":"Go"}"""))
         assertEquals(WebActCommand.WebActionResult(false, ""), WebActCommand.parseActionResult("""{"ok":false,"text":""}"""))
+        assertEquals(
+            WebActCommand.WebActionResult(true, "new value", "Search"),
+            WebActCommand.parseActionResult("""{"ok":true,"text":"new value","before":"Search"}"""),
+        )
         assertNull(WebActCommand.parseActionResult("nope"))
         assertNull(WebActCommand.parseActionResult("""{"text":"x"}"""))
+    }
+
+    @Test
+    fun `input builder reports the pre-fill text for expect hints`() {
+        val js = WebActCommand.inputJs(2, "x", submit = false)
+        assertTrue(js.contains("before"))
     }
 
     @Test

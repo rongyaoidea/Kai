@@ -13,10 +13,11 @@ import kotlinx.serialization.json.jsonPrimitive
  * existing approval model applies unchanged.
  *
  * Element addressing is snapshot-scoped, mirroring ui_dump: `snapshotJs`
- * numbers the currently interactable elements, and tap/input report live text
- * so the caller verifies the element before trusting the action — tap matches
- * its snapshot hint, input matches the filled value (unless submit navigates
- * away). A changed page fails instead of acting blindly.
+ * numbers the currently interactable elements by their raw selector index, and
+ * tap/input re-resolve that exact index. Both report their element's live text
+ * so the caller can match an optional `expect` hint from its snapshot against
+ * the element's text (for input: the text before the fill) and fail loudly when
+ * the page changed instead of acting on the wrong element.
  */
 object WebActCommand {
     const val MAX_ELEMENTS = 200
@@ -68,11 +69,12 @@ object WebActCommand {
         (function(){
           var els = document.querySelectorAll('$INTERACTIVE_SELECTOR');
           var e = els[$index];
-          if (!e) return {ok: false, text: '', reason: 'missing'};
+          if (!e) return {ok: false, text: '', before: '', reason: 'missing'};
           var tag = e.tagName.toLowerCase();
           if (tag !== 'input' && tag !== 'select' && tag !== 'textarea' && e.isContentEditable !== true) {
-            return {ok: false, text: '', reason: 'not_fillable'};
+            return {ok: false, text: '', before: '', reason: 'not_fillable'};
           }
+          var before = (e.innerText || e.value || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.getAttribute('name') || '').trim().replace(/\s+/g, ' ').slice(0, $MAX_TEXT_CHARS);
           try { e.scrollIntoView({block: 'center'}); } catch (err) {}
           e.focus();
           e.value = $encoded;
@@ -80,7 +82,7 @@ object WebActCommand {
           e.dispatchEvent(new Event('change', {bubbles: true}));
           var live = (e.value || '').slice(0, $MAX_TEXT_CHARS);
           ${if (submit) "e.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', keyCode: 13, bubbles: true}));" else ""}
-          return {ok: true, text: live};
+          return {ok: true, text: live, before: before};
         })()
         """.trimIndent()
     }
@@ -148,6 +150,8 @@ object WebActCommand {
     data class WebActionResult(
         val ok: Boolean,
         val text: String,
+        /** The element's text before an input fill — what an `expect` hint is matched against. */
+        val before: String = "",
     )
 
     data class WebScrollResult(
@@ -226,6 +230,11 @@ object WebActCommand {
         } catch (_: Exception) {
             ""
         }
-        return WebActionResult(ok, text)
+        val before = try {
+            row["before"]?.jsonPrimitive?.content.orEmpty()
+        } catch (_: Exception) {
+            ""
+        }
+        return WebActionResult(ok, text, before)
     }
 }

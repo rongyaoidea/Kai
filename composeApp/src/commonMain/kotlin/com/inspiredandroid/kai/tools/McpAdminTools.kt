@@ -128,17 +128,18 @@ object McpAdminTools {
      */
     internal fun normalizeServerUrl(url: String): String {
         val t = url.trim().trimEnd('/')
-        return runCatching {
-            val parsed = Url(t)
-            buildString {
-                append(parsed.protocol.name.lowercase())
-                append("://")
-                append(parsed.host.lowercase())
-                if (parsed.port != parsed.protocol.defaultPort) append(":${parsed.port}")
-                append(parsed.encodedPath.trimEnd('/'))
-                if (parsed.encodedQuery.isNotEmpty()) append("?${parsed.encodedQuery}")
-            }
-        }.getOrNull() ?: t.lowercase()
+        val parsed = runCatching { Url(t) }.getOrNull() ?: return t.lowercase()
+        // Not a URL with an authority — fall back to the raw string so unrelated
+        // malformed entries can never collide on an empty host.
+        if (parsed.host.isBlank()) return t.lowercase()
+        return buildString {
+            append(parsed.protocol.name.lowercase())
+            append("://")
+            append(parsed.host.lowercase())
+            if (parsed.port != parsed.protocol.defaultPort) append(":${parsed.port}")
+            append(parsed.encodedPath.trimEnd('/'))
+            if (parsed.encodedQuery.isNotEmpty()) append("?${parsed.encodedQuery}")
+        }
     }
 
     /**

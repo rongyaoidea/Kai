@@ -166,22 +166,20 @@ class WebViewSessionManager(private val appContext: Context) {
         return result
     }
 
-    suspend fun input(id: String, index: Int, text: String, submit: Boolean): WebActCommand.WebActionResult {
+    suspend fun input(id: String, index: Int, text: String, submit: Boolean, expect: String = ""): WebActCommand.WebActionResult {
         val view = session(id)
         touch(id)
         val raw = view.evalJs(WebActCommand.inputJs(index, text, submit), ACTION_TIMEOUT_MS)
             ?: return WebActCommand.WebActionResult(false, "")
         val result = WebActCommand.parseActionResult(raw)
             ?: return WebActCommand.WebActionResult(false, "")
-        if (result.ok && !submit) {
-            // inputJs fills then reports the live value: a page change between
-            // snapshot and fill lands on the wrong element, so verify the filled
-            // text like tap verifies its hint instead of reporting ok blindly.
-            // (Skipped for submit: Enter may navigate or clear the field.)
-            val want = text.trim().replace(Regex("\\s+"), " ").take(24)
-            if (want.isNotEmpty() && want !in result.text) {
-                return WebActCommand.WebActionResult(false, result.text)
-            }
+        // Same opt-in identity guard as tap: `expect` is the text the caller saw in
+        // its snapshot, compared against the element's text before the fill. No
+        // comparison against the filled value — input masks and autocomplete
+        // legitimately reformat what was typed.
+        val hint = expect.trim().take(24)
+        if (result.ok && hint.isNotEmpty() && hint !in result.before) {
+            return WebActCommand.WebActionResult(false, result.before)
         }
         if (result.ok && submit) delay(SETTLE_MS)
         return result

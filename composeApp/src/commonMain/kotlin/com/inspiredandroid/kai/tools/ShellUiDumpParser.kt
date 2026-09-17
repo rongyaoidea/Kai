@@ -55,10 +55,16 @@ object ShellUiDumpParser {
                 if (selfClosing && depth > -1) depth--
                 continue
             }
-            val left = boundsMatch.groupValues[1].toIntOrNull() ?: continue
-            val top = boundsMatch.groupValues[2].toIntOrNull() ?: continue
-            val right = boundsMatch.groupValues[3].toIntOrNull() ?: continue
-            val bottom = boundsMatch.groupValues[4].toIntOrNull() ?: continue
+            val left = boundsMatch.groupValues[1].toIntOrNull()
+            val top = boundsMatch.groupValues[2].toIntOrNull()
+            val right = boundsMatch.groupValues[3].toIntOrNull()
+            val bottom = boundsMatch.groupValues[4].toIntOrNull()
+            // Malformed/overflowing bounds: drop the node, but still undo the depth
+            // level a self-closing node consumed (same as the no-bounds case above).
+            if (left == null || top == null || right == null || bottom == null) {
+                if (selfClosing && depth > -1) depth--
+                continue
+            }
             val node = ShellUiNode(
                 text = attrs["text"].orEmpty(),
                 desc = attrs["content-desc"].orEmpty(),
