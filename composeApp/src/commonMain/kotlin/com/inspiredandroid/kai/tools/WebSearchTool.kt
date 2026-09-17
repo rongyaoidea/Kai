@@ -184,7 +184,7 @@ internal class SourceCircuit(
         (benched[id]?.untilMs ?: 0L).minus(nowMs()).coerceAtLeast(0L)
     }
 
-    suspend fun recordSuccess(id: String) = mutex.withLock {
+    suspend fun recordSuccess(id: String): Unit = mutex.withLock {
         benched.remove(id)
     }
 
@@ -220,7 +220,7 @@ internal class SearchSource(
     val search: suspend (encodedQuery: String, df: String?, count: Int) -> List<Map<String, String>>,
 )
 
-object WebSearchTool {
+object WebSearchTool : Tool {
     private val liteLinkRegex = Regex("""<a[^>]+class=['"]result-link['"][^>]*>([\s\S]*?)</a>""")
     private val liteHrefRegex = Regex("""href=['"]([^'"]*?)['"]""")
     private val liteSnippetRegex = Regex("""<td[^>]+class=['"]result-snippet['"][^>]*>([\s\S]*?)</td>""")
@@ -274,6 +274,18 @@ object WebSearchTool {
     private val rssDescriptionRegex = Regex("""<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?</description>""")
 
     private val json = Json { ignoreUnknownKeys = true }
+
+    /**
+     * Captcha markers are engine-specific strings that only appear on the
+     * engine's own interstitial pages, so a search *for* the word "captcha"
+     * can't be mistaken for one.
+     */
+    private val DDG_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("bots use duckduckgo")
+    private val BING_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS
+    private val BAIDU_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("wappass.baidu.com", "百度安全验证", "请完成安全验证")
+    private val SOGOU_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("antispider", "请输入验证码", "访问过于频繁")
+    private val SO360_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("访问验证", "请输入验证码")
+    private val YANDEX_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("showcaptcha", "not a robot")
 
     override val schema = ToolSchema(
         name = "web_search",
@@ -936,15 +948,4 @@ object WebSearchTool {
         descriptionRes = Res.string.tool_web_search_description,
     )
 
-    /**
-     * Captcha markers are engine-specific strings that only appear on the
-     * engine's own interstitial pages, so a search *for* the word "captcha"
-     * can't be mistaken for one.
-     */
-    private val DDG_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("bots use duckduckgo")
-    private val BING_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS
-    private val BAIDU_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("wappass.baidu.com", "百度安全验证", "请完成安全验证")
-    private val SOGOU_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("antispider", "请输入验证码", "访问过于频繁")
-    private val SO360_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("访问验证", "请输入验证码")
-    private val YANDEX_CAPTCHA_MARKERS = DEFAULT_CAPTCHA_MARKERS + listOf("showcaptcha", "not a robot")
 }
