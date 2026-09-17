@@ -1,3 +1,8 @@
+## v3.10.1 — 2026-09-17
+
+### Fixes
+- OpenCode Zen free models: send the full official client header set (`x-opencode-client`, `x-opencode-session`, `x-opencode-project`, per-request `x-opencode-request`) and bump the spoofed User-Agent to `opencode/1.18.31` — the gateway now rejects requests carrying only the session header ("only usable in OpenCode")
+
 ## v3.10.0 — 2026-09-16
 
 ### Features
