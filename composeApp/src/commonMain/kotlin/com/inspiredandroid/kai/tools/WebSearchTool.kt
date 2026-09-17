@@ -173,6 +173,8 @@ internal class SourceCircuit(
 
     suspend fun isBenched(id: String): Boolean = mutex.withLock {
         val bench = benched[id] ?: return@withLock false
+        // untilMs == 0 means "counting strikes, not benched" — keep the count.
+        if (bench.untilMs == 0L) return@withLock false
         if (bench.untilMs <= nowMs()) {
             benched.remove(id)
             return@withLock false
