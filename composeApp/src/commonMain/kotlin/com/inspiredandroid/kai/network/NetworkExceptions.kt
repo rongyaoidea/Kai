@@ -16,6 +16,7 @@ import kai.composeapp.generated.resources.error_insufficient_credits
 import kai.composeapp.generated.resources.error_invalid_api_key
 import kai.composeapp.generated.resources.error_openai_compatible_connection
 import kai.composeapp.generated.resources.error_openai_compatible_model_not_found
+import kai.composeapp.generated.resources.error_opencode_free_tier
 import kai.composeapp.generated.resources.error_provider_error
 import kai.composeapp.generated.resources.error_quota_exhausted
 import kai.composeapp.generated.resources.error_rate_limit_exceeded
