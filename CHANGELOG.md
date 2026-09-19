@@ -1,3 +1,10 @@
+## v3.10.3 — 2026-09-19
+
+### Fixes
+- OpenCode Zen free models work again: the gateway now also checks that the session id has the official `ses_` shape and that the body is an agent-shaped stream carrying the core tool names (`bash`, `edit`, `glob`, `grep`, `read`), so the previous header-only unlock answered `403 FreeTierError` even with a valid key. Kai derives a canonical session id per conversation, forces streaming and appends any missing core tool declaration for free models only, then folds the SSE stream back into the normal response, so the tool loop and UI are unchanged. Paid models and every other provider keep their previous bodies
+- Free Zen models show the Free badge in the model picker, and a free-tier `403` is surfaced as its own message ("only works in the official OpenCode client") instead of being misreported as content moderation
+- When a free Zen model calls one of the core tool names, `bash`/`read`/`edit` route to Kai's shell and file tools under the same approval policy; `glob`/`grep` answer with guidance
+
 ## v3.10.2 — 2026-09-17
 
 ### Fixes
