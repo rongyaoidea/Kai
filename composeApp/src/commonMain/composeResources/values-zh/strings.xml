@@ -405,6 +405,7 @@
     <string name="settings_theme_oled">OLED</string>
     <string name="error_bad_request">请求无效</string>
     <string name="error_content_moderation">内容审核</string>
+    <string name="error_opencode_free_tier">OpenCode 免费模型仅限官方 OpenCode 客户端使用。请改用付费 OpenCode 模型或其他服务商。</string>
     <string name="error_provider_error">模型提供商返回了错误</string>
     <string name="error_service_unavailable">服务暂时不可用。请稍后重试。</string>
     <string name="settings_skills">技能</string>

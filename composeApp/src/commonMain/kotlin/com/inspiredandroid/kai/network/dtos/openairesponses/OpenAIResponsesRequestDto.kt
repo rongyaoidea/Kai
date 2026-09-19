@@ -24,6 +24,12 @@ data class OpenAIResponsesRequestDto(
     val model: String? = null,
     val tools: List<Tool>? = null,
     /**
+     * Streaming is off for every provider except Zen's free pool, which rejects non-streaming
+     * requests with `403 FreeTierError`. Kai consumes the SSE stream internally and assembles
+     * the same DTO callers already expect.
+     */
+    val stream: Boolean? = null,
+    /**
      * Kept `false` so OpenAI does not retain the conversation server-side. Kai replays the whole
      * history on every request, so it never needs `previous_response_id` chaining.
      */

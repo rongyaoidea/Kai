@@ -25,6 +25,7 @@ import com.inspiredandroid.kai.network.dtos.openairesponses.OpenAIResponsesRespo
 import com.inspiredandroid.kai.network.tools.Tool
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.HttpTimeoutConfig
 import io.ktor.client.plugins.UserAgent
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.logging.EMPTY
@@ -37,8 +38,10 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.content.TextContent
@@ -73,6 +76,31 @@ private fun HttpRequestBuilder.applyTimeout(requestTimeoutMs: Long?) {
 }
 
 /**
+ * Zen's free pool only answers streaming requests, and a long generation can outlive the
+ * client-wide 180s request budget. Unless the caller set an explicit deadline, lift the request
+ * timeout and let the socket timeout police stalls: every SSE frame resets it while tokens flow.
+ */
+private fun HttpRequestBuilder.applyZenStreamTimeout(requestTimeoutMs: Long?) {
+    if (requestTimeoutMs != null) {
+        applyTimeout(requestTimeoutMs)
+    } else {
+        timeout { requestTimeoutMillis = HttpTimeoutConfig.INFINITE_TIMEOUT_MS }
+    }
+}
+
+/**
+ * Zen's free pool answers `403 {"type":"error","error":{"type":"FreeTierError",…}}` when the
+ * request did not look like the official client (see `ZenAgentShape`). Without this check the
+ * 403 would be misreported as a content-moderation failure, which is as confusing as it is wrong.
+ */
+internal fun isOpenCodeFreeTierError(errorType: String?, message: String?): Boolean {
+    if (errorType?.equals("FreeTierError", ignoreCase = true) == true) return true
+    val text = message ?: return false
+    return text.contains("free tier", ignoreCase = true) ||
+        text.contains("from within OpenCode", ignoreCase = true)
+}
+
+/**
  * Session id for provider requests that belong to no conversation — the model list, and the
  * silent asks that run before a chat exists. Stable for the lifetime of the process.
  */
@@ -80,9 +108,9 @@ private val processSessionId: String by lazy { Uuid.random().toString() }
 
 /**
  * Project id sent as `x-opencode-project`. The official client sends its project id here;
- * Kai has no project concept, so one stable id per process stands in for it.
+ * Kai has no project concept, so one stable canonical id per process stands in for it.
  */
-private val processProjectId: String by lazy { Uuid.random().toString() }
+private val processProjectId: String by lazy { OpenCodeIds.project() }
 
 /** Client id the official OpenCode client sends (`OPENCODE_CLIENT`, default `cli`). */
 internal const val OPENCODE_CLIENT = "cli"
@@ -122,7 +150,9 @@ internal fun isOpenCodeGoUrl(url: String): Boolean = url.contains("/zen/go/", ig
 internal fun sessionHeadersFor(service: Service, sessionId: String?, url: String = ""): Map<String, String> = if (isOpenCodeEndpoint(service, url)) {
     mapOf(
         "x-opencode-client" to OPENCODE_CLIENT,
-        "x-opencode-session" to (sessionId?.takeIf { it.isNotBlank() } ?: processSessionId),
+        // Canonical `ses_…` shape: since 2026-09-16 the free tier rejects any other session
+        // shape with 403 FreeTierError (see OpenCodeIds).
+        "x-opencode-session" to OpenCodeIds.session(sessionId?.takeIf { it.isNotBlank() } ?: processSessionId),
         "x-opencode-project" to processProjectId,
     )
 } else {
@@ -130,14 +160,15 @@ internal fun sessionHeadersFor(service: Service, sessionId: String?, url: String
 }
 
 /** Fresh `x-opencode-request` id per HTTP request, mirroring the official client's per-message id. */
-internal fun newOpenCodeRequestId(): String = Uuid.random().toString()
+internal fun newOpenCodeRequestId(): String = OpenCodeIds.request()
 
 /**
  * OpenCode Zen's free-model pool gates on User-Agent, not on key or IP: only
  * `opencode/<version>` gets 200s, anything else (curl, third-party clients —
- * including Kai's default UA) is rejected. Since late 2026 the gateway additionally
- * requires the full `x-opencode-*` client header set (client/session/project/request);
- * the User-Agent or the session header alone no longer unlocks free models. Ktor's
+ * including Kai's default UA) is rejected. The User-Agent alone is not enough: the
+ * full `x-opencode-*` client header set (client/session/project/request, with a
+ * canonical `ses_…` session — see [OpenCodeIds]) and an agent-shaped body (`stream`
+ * plus the core tool names — see [isZenFreeModel]) are required too. Ktor's
  * UserAgent plugin only fills the header when absent, so this per-request override wins
  * for Zen while every other provider keeps reporting Kai honestly.
  *
@@ -328,26 +359,50 @@ class Requests(
         val apiKey = getApiKeyOrThrow(service, credentials)
         val model = credentials.modelId.ifEmpty { null }
         val url = resolveUrl(service, credentials, service.chatUrl)
-        val response: HttpResponse =
-            defaultClient.post(url) {
-                applyTimeout(requestTimeoutMs)
-                contentType(ContentType.Application.Json)
-                apiKey?.let { bearerAuth(it) }
-                userAgentFor(service, url)?.let { header("User-Agent", it) }
-                applySessionHeader(service, sessionId, url)
-                customHeaders.forEach { (k, v) -> header(k, v) }
-                setBody(
-                    OpenAICompatibleChatRequestDto(
-                        messages = messages,
-                        model = model,
-                        tools = tools.toRequestTools { it.toRequestTool() },
-                    ),
-                )
-            }
-        if (response.status.isSuccess()) {
-            Result.success(response.body())
+        val zenFree = isZenFreeModel(service, credentials.modelId, url)
+        val requestTools = tools.toRequestTools { it.toRequestTool() }
+        val body = OpenAICompatibleChatRequestDto(
+            messages = messages,
+            model = model,
+            tools = if (zenFree) zenShapedChatTools(requestTools) else requestTools,
+            stream = if (zenFree) true else null,
+            streamOptions = if (zenFree) OpenAICompatibleChatRequestDto.StreamOptions() else null,
+        )
+        if (zenFree) {
+            // Free Zen models only answer streaming agent-shaped requests; the SSE body is
+            // folded back into the non-streaming DTO so callers stay shape-blind.
+            Result.success(
+                defaultClient.preparePost(url) {
+                    applyZenStreamTimeout(requestTimeoutMs)
+                    contentType(ContentType.Application.Json)
+                    apiKey?.let { bearerAuth(it) }
+                    userAgentFor(service, url)?.let { header("User-Agent", it) }
+                    applySessionHeader(service, sessionId, url)
+                    customHeaders.forEach { (k, v) -> header(k, v) }
+                    setBody(body)
+                }.execute { response ->
+                    if (!response.status.isSuccess()) handleOpenAICompatibleError(service, credentials, response)
+                    val accumulator = OpenAIChatSseAccumulator()
+                    response.bodyAsChannel().readSseData(accumulator::accept)
+                    accumulator.build()
+                },
+            )
         } else {
-            handleOpenAICompatibleError(service, credentials, response)
+            val response: HttpResponse =
+                defaultClient.post(url) {
+                    applyTimeout(requestTimeoutMs)
+                    contentType(ContentType.Application.Json)
+                    apiKey?.let { bearerAuth(it) }
+                    userAgentFor(service, url)?.let { header("User-Agent", it) }
+                    applySessionHeader(service, sessionId, url)
+                    customHeaders.forEach { (k, v) -> header(k, v) }
+                    setBody(body)
+                }
+            if (response.status.isSuccess()) {
+                Result.success(response.body())
+            } else {
+                handleOpenAICompatibleError(service, credentials, response)
+            }
         }
     } catch (e: CancellationException) {
         throw e
@@ -377,25 +432,45 @@ class Requests(
         val responsesUrl = service.responsesUrl
             ?: throw OpenAICompatibleGenericException("Responses URL not configured for ${service.displayName}")
         val url = resolveUrl(service, credentials, responsesUrl)
-        val response: HttpResponse =
-            defaultClient.post(url) {
-                applyTimeout(requestTimeoutMs)
-                contentType(ContentType.Application.Json)
-                apiKey?.let { bearerAuth(it) }
-                userAgentFor(service, url)?.let { header("User-Agent", it) }
-                applySessionHeader(service, sessionId, url)
-                setBody(
-                    OpenAIResponsesRequestDto(
-                        input = input,
-                        model = credentials.modelId.ifEmpty { null },
-                        tools = tools.toRequestTools { it.toResponsesTool() },
-                    ),
-                )
-            }
-        if (response.status.isSuccess()) {
-            Result.success(response.body())
+        val zenFree = isZenFreeModel(service, credentials.modelId, url)
+        val requestTools = tools.toRequestTools { it.toResponsesTool() }
+        val body = OpenAIResponsesRequestDto(
+            input = input,
+            model = credentials.modelId.ifEmpty { null },
+            tools = if (zenFree) zenShapedResponsesTools(requestTools) else requestTools,
+            stream = if (zenFree) true else null,
+        )
+        if (zenFree) {
+            Result.success(
+                defaultClient.preparePost(url) {
+                    applyZenStreamTimeout(requestTimeoutMs)
+                    contentType(ContentType.Application.Json)
+                    apiKey?.let { bearerAuth(it) }
+                    userAgentFor(service, url)?.let { header("User-Agent", it) }
+                    applySessionHeader(service, sessionId, url)
+                    setBody(body)
+                }.execute { response ->
+                    if (!response.status.isSuccess()) handleOpenAICompatibleError(service, credentials, response)
+                    val accumulator = OpenAIResponsesSseAccumulator()
+                    response.bodyAsChannel().readSseData(accumulator::accept)
+                    accumulator.build()
+                },
+            )
         } else {
-            handleOpenAICompatibleError(service, credentials, response)
+            val response: HttpResponse =
+                defaultClient.post(url) {
+                    applyTimeout(requestTimeoutMs)
+                    contentType(ContentType.Application.Json)
+                    apiKey?.let { bearerAuth(it) }
+                    userAgentFor(service, url)?.let { header("User-Agent", it) }
+                    applySessionHeader(service, sessionId, url)
+                    setBody(body)
+                }
+            if (response.status.isSuccess()) {
+                Result.success(response.body())
+            } else {
+                handleOpenAICompatibleError(service, credentials, response)
+            }
         }
     } catch (e: CancellationException) {
         throw e
@@ -663,7 +738,10 @@ class Requests(
 
             402 -> throw OpenAICompatibleQuotaExhaustedException()
 
-            403 -> throw OpenAICompatibleContentModerationException(moderationDetail)
+            403 -> {
+                if (parsed.isFreeTierRestriction()) throw OpenAICompatibleFreeTierRestrictedException()
+                throw OpenAICompatibleContentModerationException(moderationDetail)
+            }
 
             404 -> throw OpenAICompatibleModelNotFoundException()
 
@@ -739,6 +817,8 @@ class Requests(
                 ?.let { "flagged for '$it'" }
             return reasonText ?: message
         }
+
+        fun isFreeTierRestriction(): Boolean = isOpenCodeFreeTierError(type, message)
     }
 
     private fun parseOpenAICompatibleErrorDetail(responseBody: String): OpenAICompatibleErrorDetail = try {

@@ -1,5 +1,12 @@
 # Free-tier knowledge update log
 
+## 2026-09-19
+
+* **Scope expansion (product decision)**: added **OpenCode Zen** as a curated service after making the free pool usable in Kai.
+  * **Policy** — `-free` suffix is authoritative; suffix-less stealth ids (`big-pickle`) are listed explicitly. Free Zen models are client-gated by the gateway (agent shape, not pricing), documented in [opencode-zen.md](opencode-zen.md) and `network/ZenAgentShape.kt`.
+  * **Runtime** — `FreeTierModels.isOpenCodeFree` + `isFreeTier(Service.OpenCode, …)`, used for the Free badge and for agent-shape gating.
+  * Nine ids recorded: `big-pickle`, `mimo-v2.5-free`, `ling-3.0-flash-fin-free`, `nemotron-3-ultra-free`, `nemotron-3.5-lightning-free`, `muse-spark-1.3-contributor-free`, `muse-spark-1.2-contributor-free`, `jev-1.13-free`, `deepseek-v4-flash-free` (live `/zen/v1/models` on 2026-09-19).
+
 ## 2026-09-10
 
 * **Update**: Live refresh via `process:update-free-tier-models` (models API fetched 2026-09-10, 437 models).

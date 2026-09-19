@@ -18,7 +18,7 @@ generated: { by: human:simon, at: 2026-08-11T17:36:04Z }
 
 - Read [index.md](index.md) for scope and layering (runtime vs knowledge).
 - Read policy sections in [openrouter.md](openrouter.md) and [ollama-cloud.md](ollama-cloud.md) before scraping.
-- Only **OpenRouter** and **Ollama Cloud** — do not expand services without an explicit product decision.
+- Only **OpenRouter**, **Ollama Cloud**, and **OpenCode Zen** — do not expand services without an explicit product decision.
 
 # Steps
 
@@ -37,7 +37,17 @@ generated: { by: human:simon, at: 2026-08-11T17:36:04Z }
 3. Include **Low** only by default; never **High** / **Extra High**.
 4. Store API-style ids; rely on runtime alias normalization for `:cloud` / `-cloud`.
 
-## 3. Diff and apply
+## 3. OpenCode Zen
+
+1. Fetch `https://opencode.ai/zen/v1/models` (no auth) for the live id list.
+2. Keep ids ending in `-free`; add suffix-less ids only when the docs pricing table
+   (https://opencode.ai/docs/zen/) marks them **Free** (stealth drops like `big-pickle`).
+3. Free ids are client-gated; the wire shape lives in
+   `composeApp/src/commonMain/.../network/ZenAgentShape.kt` and needs no catalog change.
+4. If a new free model is served by a strict upstream that rejects `reasoning_content`
+   echo, add its prefix to `ZEN_FREE_NO_ECHO_MODELS` in `ModelCapabilities.kt`.
+
+## 4. Diff and apply
 
 1. Diff candidates against the **Current set** sections in this bundle (and against `FreeTierModels.kt`).
 2. Show a short added/removed summary per service **before** writing.
@@ -47,14 +57,14 @@ generated: { by: human:simon, at: 2026-08-11T17:36:04Z }
 
    Preserve file structure and comments; sets only.
 4. Update this bundle:
-   - Replace **Current set** lists in [openrouter.md](openrouter.md) and [ollama-cloud.md](ollama-cloud.md)
+   - Replace **Current set** lists in [openrouter.md](openrouter.md), [ollama-cloud.md](ollama-cloud.md), and [opencode-zen.md](opencode-zen.md)
    - Set `generated: { by: process:update-free-tier-models, at: <ISO-8601 UTC> }`
    - Set `stale_after` to ~14 days ahead (`YYYY-MM-DD`)
    - Optionally set `verified` after tests pass (see below)
    - Keep `sources` and policy sections unless the external procedure actually changed
 5. Append a dated entry to [log.md](log.md) (newest first under today’s heading).
 
-## 4. Verify
+## 5. Verify
 
 1. `./gradlew :composeApp:compileKotlinDesktop`
 2. `./gradlew :composeApp:desktopTest --tests '*FreeTierModels*' --tests '*ModelTransformations*'`

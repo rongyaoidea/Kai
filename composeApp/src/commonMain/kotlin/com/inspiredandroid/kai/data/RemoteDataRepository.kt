@@ -40,10 +40,12 @@ import com.inspiredandroid.kai.network.OpenAICompatibleQuotaExhaustedException
 import com.inspiredandroid.kai.network.Requests
 import com.inspiredandroid.kai.network.ServiceCredentials
 import com.inspiredandroid.kai.network.UnsupportedFileTypeException
+import com.inspiredandroid.kai.network.ZEN_CORE_TOOL_NAMES
 import com.inspiredandroid.kai.network.dtos.anthropic.extractText
 import com.inspiredandroid.kai.network.dtos.gemini.extractText
 import com.inspiredandroid.kai.network.dtos.openaicompatible.extractInlineToolCalls
 import com.inspiredandroid.kai.network.dtos.openairesponses.OpenAIResponsesResponseDto
+import com.inspiredandroid.kai.network.isZenFreeModel
 import com.inspiredandroid.kai.network.toUiError
 import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.network.tools.ToolInfo
@@ -1172,7 +1174,14 @@ class RemoteDataRepository(
         history: MutableStateFlow<List<History>> = chatHistory,
     ): AssistantTurn {
         val contextWindowTokens = ModelCatalog.estimateContextWindow(credentials.modelId)
-        val declaredToolNames = tools.map { it.schema.name }.toSet()
+        // Free Zen requests carry the gateway's core tool names in addition to Kai's own, so a
+        // historic call made under an alias (`bash`, `read`, …) must count as declared — else
+        // the pairing pass would strip it and its result from the next turn.
+        val declaredToolNames = if (isZenFreeModel(service, credentials.modelId, credentials.baseUrl)) {
+            tools.map { it.schema.name }.toSet() + ZEN_CORE_TOOL_NAMES
+        } else {
+            tools.map { it.schema.name }.toSet()
+        }
         // GPT-5.6 and friends reject function tools on chat completions; the same messages are
         // translated to Responses API items instead. Everything before the wire call — prompt
         // assembly, tool-call pairing, context trimming — is shared. The OpenCode gateway

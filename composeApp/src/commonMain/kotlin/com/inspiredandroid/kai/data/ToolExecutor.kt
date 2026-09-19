@@ -2,6 +2,8 @@ package com.inspiredandroid.kai.data
 
 import com.inspiredandroid.kai.getAvailableTools
 import com.inspiredandroid.kai.getPlatformToolDefinitions
+import com.inspiredandroid.kai.network.ZEN_CORE_TOOL_NAMES
+import com.inspiredandroid.kai.network.ZEN_TOOL_ALIASES
 import com.inspiredandroid.kai.network.tools.Tool
 import com.inspiredandroid.kai.smartTruncate
 import com.inspiredandroid.kai.tools.ToolApprovalGate
@@ -63,8 +65,11 @@ class ToolExecutor(
         interactive: Boolean = false,
     ): String {
         val tools = toolsProvider()
-        val tool = tools.find { it.schema.name == name }
-            ?: return toolResult("""{"success": false, "error": "Unknown tool: $name"}""")
+        // Free Zen requests declare the gateway's core tool names; calls under those names
+        // execute the Kai tool that implements them (see network/ZenAgentShape.kt).
+        val resolvedName = resolveToolName(name, tools)
+        val tool = resolvedName?.let { resolved -> tools.find { it.schema.name == resolved } }
+            ?: return toolResult("""{"success": false, "error": "${unknownToolMessage(name)}"}""")
 
         val args = try {
             parseJsonToMap(arguments)
@@ -72,8 +77,11 @@ class ToolExecutor(
             return toolResult("""{"success": false, "error": "Failed to parse arguments: ${e.message}"}""")
         }
 
-        if (!isApproved(name, arguments, interactive)) {
-            return toolResult("""{"success": false, "error": "${denialMessage(name, interactive)}"}""")
+        // Approval runs on the resolved name so an alias can't dodge the real tool's policy
+        // (e.g. `bash` must be as risky as `execute_shell_command`).
+        val approvedName = resolvedName ?: name
+        if (!isApproved(approvedName, arguments, interactive)) {
+            return toolResult("""{"success": false, "error": "${denialMessage(approvedName, interactive)}"}""")
         }
 
         return try {
@@ -100,7 +108,7 @@ class ToolExecutor(
             }
             toolResult(truncateResult(resultString))
         } catch (e: TimeoutCancellationException) {
-            toolResult("""{"success": false, "error": "Tool '$name' timed out after ${tool.timeout}"}""")
+            toolResult("""{"success": false, "error": "Tool '$approvedName' timed out after ${tool.timeout}"}""")
         } catch (e: CancellationException) {
             // Cooperative cancellation (user pressed stop) must propagate, not become a
             // fake tool result the loop would keep reasoning about.
@@ -223,7 +231,21 @@ class ToolExecutor(
     }
 
     suspend fun getToolDisplayName(toolId: String): String {
-        val toolInfo = getPlatformToolDefinitions().find { it.id == toolId } ?: return toolId
+        val resolved = ZEN_TOOL_ALIASES[toolId] ?: toolId
+        val toolInfo = getPlatformToolDefinitions().find { it.id == resolved } ?: return resolved
         return toolInfo.nameRes?.let { getString(it) } ?: toolInfo.name
+    }
+
+    /** The Kai tool a wire-level alias maps to, or [name] itself when it is already a real tool. */
+    private fun resolveToolName(name: String, tools: List<Tool>): String? {
+        if (tools.any { it.schema.name == name }) return name
+        return ZEN_TOOL_ALIASES[name]
+    }
+
+    private fun unknownToolMessage(name: String): String = if (name in ZEN_CORE_TOOL_NAMES) {
+        "Tool '$name' is a gateway placeholder and has no implementation in this client. " +
+            "Use execute_shell_command for shell work (find/rg for glob/grep) and read_file/write_file for files."
+    } else {
+        "Unknown tool: $name"
     }
 }

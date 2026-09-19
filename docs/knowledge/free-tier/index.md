@@ -18,12 +18,13 @@ The app **never** reads this directory at runtime. No live pricing calls are mad
 
 ## Scope
 
-Only **OpenRouter** and **Ollama Cloud** are curated. Free-ness is **per service**, not global.
+**OpenRouter**, **Ollama Cloud**, and **OpenCode Zen** are curated. Free-ness is **per service**, not global.
 
 ## Catalogs
 
 * [OpenRouter free-tier models](openrouter.md) — $0 prompt + completion pricing (chat-oriented)
 * [Ollama Cloud free-tier models](ollama-cloud.md) — free-plan / light-usage cloud models
+* [OpenCode Zen free-tier models](opencode-zen.md) — `-free` suffix ids plus stealth drops (client-gated by the gateway)
 
 ## Playbooks
 

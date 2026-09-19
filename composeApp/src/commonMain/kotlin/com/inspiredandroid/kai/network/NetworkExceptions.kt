@@ -54,6 +54,7 @@ class OpenAICompatibleModelNotFoundException : OpenAICompatibleApiException()
 class OpenAICompatibleEmptyResponseException : OpenAICompatibleApiException()
 class OpenAICompatibleRequestTooLargeException : OpenAICompatibleApiException()
 class OpenAICompatibleContentModerationException(detail: String? = null) : OpenAICompatibleApiException(detail)
+class OpenAICompatibleFreeTierRestrictedException : OpenAICompatibleApiException()
 class OpenAICompatibleProviderErrorException(detail: String? = null) : OpenAICompatibleApiException(detail)
 class OpenAICompatibleServiceUnavailableException : OpenAICompatibleApiException()
 class OpenAICompatibleTimeoutException : OpenAICompatibleApiException()
@@ -152,6 +153,8 @@ fun Exception.toUiError(): UiError = when (this) {
     is OpenAICompatibleContentModerationException -> message?.takeIf { it.isNotBlank() }
         ?.let { UiError.ResourceWithDetail(Res.string.error_content_moderation, it) }
         ?: UiError.Resource(Res.string.error_content_moderation)
+
+    is OpenAICompatibleFreeTierRestrictedException -> UiError.Resource(Res.string.error_opencode_free_tier)
 
     is OpenAICompatibleProviderErrorException -> message?.takeIf { it.isNotBlank() }
         ?.let { UiError.ResourceWithDetail(Res.string.error_provider_error, it) }

@@ -455,6 +455,19 @@ class ModelTransformationsTest {
     }
 
     @Test
+    fun `mapOpenAICompatibleModels marks OpenCode Zen free-tier models`() {
+        val models = listOf(
+            OpenAICompatibleModelResponseDto.Model(id = "nemotron-3.5-lightning-free"),
+            OpenAICompatibleModelResponseDto.Model(id = "big-pickle"),
+            OpenAICompatibleModelResponseDto.Model(id = "deepseek-v4-pro"),
+        )
+        val result = mapOpenAICompatibleModels(models, Service.OpenCode, selectedModelId = "")
+        assertTrue(result.first { it.id == "nemotron-3.5-lightning-free" }.isFreeTier)
+        assertTrue(result.first { it.id == "big-pickle" }.isFreeTier)
+        assertFalse(result.first { it.id == "deepseek-v4-pro" }.isFreeTier)
+    }
+
+    @Test
     fun `mapOpenAICompatibleModels does not mark free on services without a free catalog`() {
         val models = listOf(
             OpenAICompatibleModelResponseDto.Model(id = "gpt-oss:20b"),

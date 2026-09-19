@@ -20,6 +20,12 @@ data class OpenAIResponsesResponseDto(
     @Serializable
     data class OutputItem(
         val type: String? = null,
+        /**
+         * Item id (`rs_…` / `fc_…`). Only present on streamed events, where it links
+         * `response.function_call_arguments.*` deltas back to this item; the non-streaming
+         * response omits it.
+         */
+        val id: String? = null,
         val role: String? = null,
         /** `message` items: the assistant's answer, as `output_text` parts. */
         val content: List<ContentPart>? = null,

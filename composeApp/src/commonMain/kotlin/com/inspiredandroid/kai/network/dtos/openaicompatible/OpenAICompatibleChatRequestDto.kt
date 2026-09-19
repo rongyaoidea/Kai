@@ -9,7 +9,21 @@ data class OpenAICompatibleChatRequestDto(
     val messages: List<Message>,
     val model: String? = null,
     val tools: List<Tool>? = null,
+    /**
+     * Streaming is off for every provider except Zen's free pool, which rejects non-streaming
+     * requests with `403 FreeTierError` (see `network/ZenAgentShape.kt`). Kai consumes the SSE
+     * stream internally and assembles the same DTO callers already expect.
+     */
+    val stream: Boolean? = null,
+    @SerialName("stream_options")
+    val streamOptions: StreamOptions? = null,
 ) {
+    @Serializable
+    data class StreamOptions(
+        @SerialName("include_usage")
+        val includeUsage: Boolean = true,
+    )
+
     @Serializable
     data class Message(
         val role: String, // "system", "user", "assistant", "tool"

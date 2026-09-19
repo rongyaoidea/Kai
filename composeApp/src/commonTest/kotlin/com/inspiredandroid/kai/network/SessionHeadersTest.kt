@@ -26,10 +26,14 @@ class SessionHeadersTest {
     private val zenChatUrl = "https://opencode.ai/zen/v1/chat/completions"
     private val goChatUrl = "https://opencode.ai/zen/go/v1/chat/completions"
 
+    /** What the header writer must mint for "conv-42" (see [OpenCodeIds]). */
+    private val canonicalSession = OpenCodeIds.session("conv-42")
+
     @Test
-    fun openCodeRequestCarriesTheConversationIdAsSessionId() {
+    fun openCodeRequestCarriesTheConversationIdAsCanonicalSessionId() {
         val headers = sessionHeadersFor(Service.OpenCode, "conv-42")
-        assertEquals("conv-42", headers[session])
+        assertEquals(canonicalSession, headers[session])
+        assertTrue(OpenCodeIds.isCanonicalSession(headers[session]!!))
         assertEquals(OPENCODE_CLIENT, headers[client])
         assertNotNull(headers[project])
         assertTrue(headers[project]!!.isNotBlank())
@@ -83,7 +87,7 @@ class SessionHeadersTest {
     @Test
     fun openAICompatiblePointedAtGoCarriesTheSessionHeader() {
         val headers = sessionHeadersFor(Service.OpenAICompatible, "conv-42", goChatUrl)
-        assertEquals("conv-42", headers[session])
+        assertEquals(canonicalSession, headers[session])
         assertEquals(OPENCODE_CLIENT, headers[client])
         assertNotNull(headers[project])
     }
@@ -91,7 +95,7 @@ class SessionHeadersTest {
     @Test
     fun openAICompatiblePointedAtZenCarriesSessionAndOfficialUserAgent() {
         val headers = sessionHeadersFor(Service.OpenAICompatible, "conv-42", zenChatUrl)
-        assertEquals("conv-42", headers[session])
+        assertEquals(canonicalSession, headers[session])
         assertEquals(OPENCODE_CLIENT, headers[client])
         assertNotNull(headers[project])
         assertEquals(OPENCODE_USER_AGENT, userAgentFor(Service.OpenAICompatible, zenChatUrl))
@@ -113,7 +117,7 @@ class SessionHeadersTest {
     @Test
     fun openCodeGoPresetCarriesSessionHeaderAndKeepsKaiUserAgent() {
         val headers = sessionHeadersFor(Service.OpenCodeGo, "conv-42")
-        assertEquals("conv-42", headers[session])
+        assertEquals(canonicalSession, headers[session])
         assertEquals(OPENCODE_CLIENT, headers[client])
         assertNotNull(headers[project])
         assertEquals(null, userAgentFor(Service.OpenCodeGo))

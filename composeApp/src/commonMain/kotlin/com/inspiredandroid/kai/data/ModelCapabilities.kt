@@ -234,6 +234,8 @@ internal val ZEN_FREE_NO_ECHO_MODELS = listOf(
     "ling-3.0-flash-fin-free",
     "nemotron-3-ultra-free",
     "nemotron-3.5-lightning-free",
+    "jev-1.13-free",
+    "deepseek-v4-flash-free",
 )
 
 /**

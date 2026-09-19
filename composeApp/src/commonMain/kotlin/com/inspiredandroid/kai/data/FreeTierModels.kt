@@ -52,12 +52,32 @@ internal object FreeTierModels {
         "nemotron-3-nano:30b",
     )
 
+    /**
+     * OpenCode Zen free-pool models. Most carry a `-free` suffix; stealth
+     * drops like `big-pickle` do not, hence the explicit set (see
+     * opencode.ai/docs/zen). Zen's free tier is client-gated (see
+     * `network/ZenAgentShape.kt`), so these are the models Kai must send in
+     * agent shape.
+     */
+    private val openCodeFree: Set<String> = setOf(
+        "big-pickle",
+        "mimo-v2.5-free",
+        "ling-3.0-flash-fin-free",
+        "nemotron-3-ultra-free",
+        "nemotron-3.5-lightning-free",
+        "muse-spark-1.3-contributor-free",
+        "muse-spark-1.2-contributor-free",
+        "jev-1.13-free",
+        "deepseek-v4-flash-free",
+    )
+
     private val byService: Map<String, Set<String>> = mapOf(
         Service.OpenRouter.id to openRouterFree,
         Service.OllamaCloud.id to ollamaCloudFree,
     )
 
     fun isFreeTier(service: Service, modelId: String): Boolean {
+        if (service == Service.OpenCode) return isOpenCodeFree(modelId)
         val set = byService[service.id] ?: return false
         val lower = modelId.lowercase()
         if (lower in set) return true
@@ -65,6 +85,16 @@ internal object FreeTierModels {
             return normalizeOllamaId(lower) in set
         }
         return false
+    }
+
+    /**
+     * True for Zen free-pool ids. The `-free` suffix is authoritative — the
+     * docs list free models per release and new ones arrive with that suffix —
+     * while [openCodeFree] covers the scheduled/stealth ids that lack it.
+     */
+    fun isOpenCodeFree(modelId: String): Boolean {
+        val lower = modelId.lowercase()
+        return lower.endsWith("-free") || lower in openCodeFree
     }
 
     /**
