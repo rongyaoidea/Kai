@@ -67,16 +67,18 @@ jobs:
 
       - name: Debug resource accessors (temporary)
         run: |
-          ./gradlew :composeApp:generateResourceAccessorsForCommonMain --no-daemon --stacktrace
-          echo "=== accessor files ==="
-          find composeApp/build/generated/compose/resourceGenerator/kotlin -name '*.kt' | sort
-          echo "=== new key in generated accessors ==="
-          grep -rl "error_opencode_free_tier" composeApp/build/generated/compose/resourceGenerator/kotlin || echo "NOT FOUND IN ACCESSORS"
-          echo "=== new key in cvr ==="
-          grep -l "error_opencode_free_tier" composeApp/build/generated/compose/resourceGenerator/preparedResources/commonMain/composeResources/values/strings.commonMain.cvr || echo "NOT IN CVR"
-          echo "=== source ==="
-          wc -l composeApp/src/commonMain/composeResources/values/strings.xml
-          grep -c "error_opencode_free_tier" composeApp/src/commonMain/composeResources/values/strings.xml || true
+          cat > /tmp/probe.init.gradle.kts <<'EOF'
+          allprojects {
+              tasks.matching { it.name == "compileAndroidMain" }.configureEach {
+                  doFirst {
+                      val f = file("build/generated/compose/resourceGenerator/kotlin/commonMainResourceAccessors/kai/composeapp/generated/resources/String0.commonMain.kt")
+                      println("PROBE String0 exists=" + f.exists() + " hasKey=" + (f.exists() && f.readText().contains("error_opencode_free_tier")))
+                      println("PROBE resourceGenerator inputs=" + inputs.files.files.filter { it.path.contains("resourceGenerator") }.joinToString("\n  "))
+                  }
+              }
+          }
+          EOF
+          ./gradlew :composeApp:compileAndroidMain --init-script /tmp/probe.init.gradle.kts --no-daemon --stacktrace 2>&1 | grep -E "PROBE|e: file|FAILED" || true
 
       - name: Run spotlessApply
         run: ./gradlew spotlessApply --no-daemon --stacktrace
