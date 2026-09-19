@@ -73,7 +73,8 @@ jobs:
                   doFirst {
                       val f = file("build/generated/compose/resourceGenerator/kotlin/commonMainResourceAccessors/kai/composeapp/generated/resources/String0.commonMain.kt")
                       println("PROBE String0 exists=" + f.exists() + " hasKey=" + (f.exists() && f.readText().contains("error_opencode_free_tier")))
-                      println("PROBE resourceGenerator inputs=" + inputs.files.files.filter { it.path.contains("resourceGenerator") }.joinToString("\n  "))
+                      val gen = inputs.files.files.filter { it.path.contains("resourceGenerator") }
+                      println("PROBE resourceGenerator inputs count=" + gen.size + " -> " + gen.joinToString(" | "))
                   }
               }
           }
