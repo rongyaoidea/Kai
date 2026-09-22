@@ -581,14 +581,20 @@ class ChatViewModelTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        viewModel.state.value.actions.ask("Hello")
-        testDispatcher.scheduler.advanceUntilIdle()
-        assertTrue(viewModel.state.value.isLoading)
-        assertTrue(viewModel.state.value.isForegroundReply)
+        viewModel.state.test {
+            var state = awaitItem()
+            state.actions.ask("Hello")
+            testDispatcher.scheduler.advanceUntilIdle()
 
-        gate.complete(Unit)
-        testDispatcher.scheduler.advanceUntilIdle()
-        assertFalse(viewModel.state.value.isForegroundReply)
+            while (!state.isLoading) state = awaitItem()
+            assertTrue(state.isForegroundReply)
+
+            gate.complete(Unit)
+            testDispatcher.scheduler.advanceUntilIdle()
+            while (state.isForegroundReply) state = awaitItem()
+            assertFalse(state.isForegroundReply)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 
     @Test
@@ -596,13 +602,19 @@ class ChatViewModelTest {
         val viewModel = createViewModel()
         testDispatcher.scheduler.advanceUntilIdle()
 
-        // A heartbeat-style background run: the repository reports it running, but no ask
-        // went through this ViewModel.
-        fakeRepository.runningConversationIds.value = setOf("hb")
-        viewModel.state.value.actions.loadConversation("hb")
-        testDispatcher.scheduler.advanceUntilIdle()
+        viewModel.state.test {
+            val initialState = awaitItem()
 
-        assertTrue(viewModel.state.value.isLoading)
-        assertFalse(viewModel.state.value.isForegroundReply)
+            // A heartbeat-style background run: the repository reports it running, but no ask
+            // went through this ViewModel.
+            fakeRepository.runningConversationIds.value = setOf("hb")
+            initialState.actions.loadConversation("hb")
+            testDispatcher.scheduler.advanceUntilIdle()
+
+            var state = initialState
+            while (!state.isLoading) state = awaitItem()
+            assertFalse(state.isForegroundReply)
+            cancelAndIgnoreRemainingEvents()
+        }
     }
 }
