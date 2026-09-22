@@ -1,6 +1,6 @@
 # Chat & Conversations
 
-**Last verified:** 2026-09-13
+**Last verified:** 2026-09-19
 
 Kai's chat system manages the message history, conversation persistence, file attachments, and speech output. Conversations are service-independent — switching providers does not affect which conversation is loaded or restored. Multiple conversations are persisted and browsable via a history sheet.
 
@@ -120,6 +120,7 @@ Multiple files can be attached to a single prompt. Each file is added one at a t
 
 - **Top bar**: New Chat, Chat History, a Sandbox toggle (Android only, shown between History and TTS when the sandbox feature is available on the device), TTS toggle, Settings (on mobile; on non-mobile, Settings is in the navigation tab bar)
 - **Scroll to bottom**: a small floating action button (down arrow) appears when the user has scrolled up past the latest messages; tapping it animates back to the bottom
+- **Auto-scroll policy**: appends pull the viewport to the newest item only while the reader is following it — they just sent a message, or their own reply is still streaming with the list already at the bottom. Opening a conversation starts at the newest item. Background appends (heartbeat or scheduled runs mirroring their live history into the viewed conversation) never move the viewport, so reading an older part of the heartbeat log is not interrupted; the scroll-to-bottom button reports new content instead
 - **Messages**: user (right-aligned, with optional image preview), assistant (Markdown-rendered + action buttons), tool executing (spinner), loading indicator, error with retry (or free-provider suggestions panel when Free is rate-limited with no services configured). When the fallback chain answered with an alternate service rather than the user's selected one, a small "Answered by …" label is shown under the assistant message naming the service that produced the response
 - **Input**: text field, send/stop button, attachment button, file chip
 - **Empty state**: animated logo + welcome message
@@ -137,6 +138,7 @@ Multiple files can be attached to a single prompt. Each file is added one at a t
 | `composeApp/src/commonMain/.../data/FileClassification.kt` | File category enum, MIME/extension classifier, size constants, file exceptions |
 | `composeApp/src/commonMain/.../data/RemoteDataRepository.kt` | History management, conversation save/restore/delete, title derivation, message sending |
 | `composeApp/src/commonMain/.../ui/chat/ChatViewModel.kt` | Chat UI state, send/retry/regenerate/cancel/loadConversation/deleteConversation actions |
+| `composeApp/src/commonMain/.../ui/chat/ChatAutoScroll.kt` | Whether a history append may follow the newest item (foreground reply vs background append) |
 | `composeApp/src/commonMain/.../ui/chat/ChatScreen.kt` | Chat UI composables, history sheet and heartbeat button wiring |
 | `composeApp/src/commonMain/.../ui/chat/composables/ChatHistorySheet.kt` | Bottom sheet listing saved conversations |
 | `composeApp/src/commonMain/.../ui/chat/composables/HeartbeatFab.kt` | Floating heartbeat entry point with unread/running animations |

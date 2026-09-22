@@ -73,6 +73,13 @@ data class ChatUiState(
     val history: ImmutableList<History> = persistentListOf(),
     val isSpeechOutputEnabled: Boolean = false,
     val isLoading: Boolean = false,
+    /**
+     * True while a run the user started is in flight for the viewed conversation. Background
+     * runs (heartbeat, scheduled tasks) set [isLoading] when their conversation is opened but
+     * never this flag, so chat only follows the newest item for the user's own reply — see
+     * [shouldFollowNewestItem].
+     */
+    val isForegroundReply: Boolean = false,
     val error: UiError? = null,
     val showFreeProviderSuggestions: Boolean = false,
     val warning: StringResource? = null,

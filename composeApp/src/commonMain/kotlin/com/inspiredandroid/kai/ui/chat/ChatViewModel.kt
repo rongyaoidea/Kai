@@ -284,6 +284,7 @@ class ChatViewModel(
             _state.update {
                 it.copy(
                     isLoading = true,
+                    isForegroundReply = true,
                     error = null,
                     showFreeProviderSuggestions = false,
                     files = persistentListOf(),
@@ -321,7 +322,12 @@ class ChatViewModel(
                 runFailures.update { it - conversationId }
                 if (dataRepository.currentConversationId.value == conversationId) {
                     _state.update {
-                        it.copy(isLoading = false, error = null, showFreeProviderSuggestions = false)
+                        it.copy(
+                            isLoading = false,
+                            isForegroundReply = false,
+                            error = null,
+                            showFreeProviderSuggestions = false,
+                        )
                     }
                 }
             } catch (exception: Exception) {
@@ -342,7 +348,10 @@ class ChatViewModel(
                 runJobs.update { it - conversationId }
                 if (dataRepository.currentConversationId.value == conversationId) {
                     _state.update {
-                        it.copy(isLoading = dataRepository.runningConversationIds.value.contains(conversationId))
+                        it.copy(
+                            isLoading = dataRepository.runningConversationIds.value.contains(conversationId),
+                            isForegroundReply = false,
+                        )
                     }
                 }
             }
@@ -365,6 +374,7 @@ class ChatViewModel(
                     error = failure.error,
                     showFreeProviderSuggestions = failure.showUpsell,
                     isLoading = false,
+                    isForegroundReply = false,
                 )
             }
         }
@@ -489,7 +499,7 @@ class ChatViewModel(
             runJobs.value[conversationId]?.cancel()
         }
         _state.update {
-            it.copy(isLoading = false)
+            it.copy(isLoading = false, isForegroundReply = false)
         }
     }
 
@@ -563,7 +573,11 @@ class ChatViewModel(
                 error = failure?.error,
                 showFreeProviderSuggestions = failure?.showUpsell ?: false,
                 isInteractiveMode = isInteractive,
+                // A run may already be in flight here (foreground resumed, or a background
+                // heartbeat), but reopening never counts as the user's own reply: new rows
+                // must not yank the viewport while they read.
                 isLoading = dataRepository.runningConversationIds.value.contains(id),
+                isForegroundReply = false,
                 composerPrefill = null,
             )
         }
@@ -677,6 +691,7 @@ class ChatViewModel(
                 showFreeProviderSuggestions = false,
                 isInteractiveMode = false,
                 isLoading = false,
+                isForegroundReply = false,
                 composerPrefill = composerPrefill,
             )
         }
@@ -710,6 +725,7 @@ class ChatViewModel(
             it.copy(
                 isInteractiveMode = false,
                 isLoading = false,
+                isForegroundReply = false,
                 error = null,
                 showFreeProviderSuggestions = false,
             )

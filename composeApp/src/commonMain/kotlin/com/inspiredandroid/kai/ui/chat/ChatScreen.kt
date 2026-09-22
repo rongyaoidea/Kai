@@ -707,11 +707,34 @@ private fun ChatModeScreen(
                             val listState = rememberLazyListState()
                             val componentScope = rememberCoroutineScope()
 
+                            // Opening a conversation starts at the newest content (no saved
+                            // per-conversation position yet).
+                            LaunchedEffect(uiState.currentConversationId) {
+                                val history = uiState.history
+                                if (history.isNotEmpty()) {
+                                    listState.requestScrollToItem(history.lastIndex)
+                                }
+                            }
+
                             LaunchedEffect(uiState.history.size) {
                                 // Capture history at effect start to prevent race conditions
                                 val history = uiState.history
                                 if (history.isNotEmpty()) {
-                                    listState.requestScrollToItem(history.lastIndex)
+                                    // layoutInfo is from the last measure pass, so "at bottom"
+                                    // describes the reader's position before this append — which
+                                    // is exactly what decides whether to follow it.
+                                    val info = listState.layoutInfo
+                                    val atBottom = info.visibleItemsInfo.lastOrNull()
+                                        ?.index?.let { it >= info.totalItemsCount - 1 } == true
+                                    val follow = shouldFollowNewestItem(
+                                        neverLaidOut = info.totalItemsCount == 0,
+                                        atBottom = atBottom,
+                                        userSubmitted = history.last().role == History.Role.USER,
+                                        foregroundReply = uiState.isForegroundReply,
+                                    )
+                                    if (follow) {
+                                        listState.requestScrollToItem(history.lastIndex)
+                                    }
                                     val lastMessage = history.last()
                                     if (uiState.isSpeechOutputEnabled && lastMessage.role == History.Role.ASSISTANT) {
                                         componentScope.launch(getBackgroundDispatcher()) {

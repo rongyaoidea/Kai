@@ -573,4 +573,36 @@ class ChatViewModelTest {
             assertTrue(state.supportedFileExtensions.isEmpty())
         }
     }
+
+    @Test
+    fun `an in-flight user run is marked as foreground and clears when done`() = runTest {
+        val gate = CompletableDeferred<Unit>()
+        fakeRepository.askGate = gate
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        viewModel.state.value.actions.ask("Hello")
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertTrue(viewModel.state.value.isLoading)
+        assertTrue(viewModel.state.value.isForegroundReply)
+
+        gate.complete(Unit)
+        testDispatcher.scheduler.advanceUntilIdle()
+        assertFalse(viewModel.state.value.isForegroundReply)
+    }
+
+    @Test
+    fun `a background run in the viewed conversation is not marked as foreground`() = runTest {
+        val viewModel = createViewModel()
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        // A heartbeat-style background run: the repository reports it running, but no ask
+        // went through this ViewModel.
+        fakeRepository.runningConversationIds.value = setOf("hb")
+        viewModel.state.value.actions.loadConversation("hb")
+        testDispatcher.scheduler.advanceUntilIdle()
+
+        assertTrue(viewModel.state.value.isLoading)
+        assertFalse(viewModel.state.value.isForegroundReply)
+    }
 }
