@@ -1,3 +1,8 @@
+## v3.10.4 — 2026-09-22
+
+### Fixes
+- Heartbeat conversations no longer yank the viewport to the bottom while you read them. The heartbeat run mirrors its live history into the conversation you are viewing, and every append (assistant rows, tool-progress indicators added and removed) re-triggered the size-keyed auto-scroll. Auto-scroll is now opt-in per append: opening a conversation starts at the newest item, sending a message always follows, and your own reply streams only while the list is already at the bottom. Background appends (heartbeat and scheduled runs) never move the viewport — the scroll-to-bottom button reports the new content instead
+
 ## v3.10.3 — 2026-09-19
 
 ### Fixes
