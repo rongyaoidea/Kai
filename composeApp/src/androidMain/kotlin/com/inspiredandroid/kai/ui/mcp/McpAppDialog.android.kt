@@ -27,6 +27,9 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.inspiredandroid.kai.ui.settings.McpAppDialogState
+import kai.composeapp.generated.resources.Res
+import kai.composeapp.generated.resources.settings_mcp_app_close
+import kai.composeapp.generated.resources.settings_mcp_app_load_failed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -36,6 +39,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
+import org.jetbrains.compose.resources.stringResource
 import org.json.JSONObject
 
 /**
@@ -75,8 +79,7 @@ actual fun McpAppDialog(
                         modifier = Modifier.weight(1f),
                     )
                     TextButton(onClick = onDismiss) {
-                        // TODO(codegen): restore Res.string.settings_mcp_app_close (see McpSection.kt).
-                        Text("Close")
+                        Text(stringResource(Res.string.settings_mcp_app_close))
                     }
                 }
                 val html = state.html
@@ -93,9 +96,8 @@ actual fun McpAppDialog(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center,
                     ) {
-                        // TODO(codegen): restore Res.string.settings_mcp_app_load_failed (see McpSection.kt).
                         Text(
-                            text = "Could not load the interactive UI",
+                            text = stringResource(Res.string.settings_mcp_app_load_failed),
                             color = MaterialTheme.colorScheme.error,
                         )
                     }

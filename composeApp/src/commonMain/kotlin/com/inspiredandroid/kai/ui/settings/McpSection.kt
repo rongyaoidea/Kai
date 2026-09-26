@@ -79,6 +79,7 @@ import kai.composeapp.generated.resources.settings_mcp_server_name
 import kai.composeapp.generated.resources.settings_mcp_server_url
 import kai.composeapp.generated.resources.settings_mcp_servers
 import kai.composeapp.generated.resources.settings_mcp_servers_description
+import kai.composeapp.generated.resources.settings_mcp_show_ui
 import kai.composeapp.generated.resources.settings_mcp_status_connected
 import kai.composeapp.generated.resources.settings_mcp_status_connecting
 import kai.composeapp.generated.resources.settings_mcp_status_error
@@ -258,10 +259,7 @@ private fun McpServerCard(
                                     onClick = { onOpenAppUi(tool.name) },
                                     modifier = Modifier.handCursor(),
                                 ) {
-                                    // TODO(codegen): restore Res.string.settings_mcp_show_ui once the
-                                    // compose-resources generator picks up new keys again — it silently
-                                    // dropped exactly the keys added with this feature (see commit history).
-                                    Text("Open UI")
+                                    Text(stringResource(Res.string.settings_mcp_show_ui))
                                 }
                             }
                             Switch(
