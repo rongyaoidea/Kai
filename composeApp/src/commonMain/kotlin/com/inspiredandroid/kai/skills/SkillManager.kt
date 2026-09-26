@@ -159,7 +159,7 @@ class SkillManager(
                 }
             }
             for (builtIn in loadBuiltInSkills(sources.first().second)) {
-                byId.putIfAbsent(builtIn.id, builtIn)
+                byId.getOrPut(builtIn.id) { builtIn }
             }
             byId.values.sortedBy { it.id }
         }

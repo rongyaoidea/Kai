@@ -65,7 +65,7 @@ internal class OpenAIChatSseAccumulator {
     }
 
     fun build(): OpenAICompatibleChatResponseDto {
-        val calls = toolCalls.toSortedMap().entries.mapNotNull { (index, builder) ->
+        val calls = toolCalls.entries.sortedBy { it.key }.mapNotNull { (index, builder) ->
             val name = builder.name ?: return@mapNotNull null
             OpenAICompatibleChatResponseDto.ToolCall(
                 id = builder.id ?: "call_$index",

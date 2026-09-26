@@ -39,7 +39,7 @@ object HtmlPreview {
      */
     @OptIn(ExperimentalUuidApi::class)
     fun publish(conversationId: String?, path: String, html: String): Boolean {
-        if (html.isBlank() || html.toByteArray().size > MAX_BYTES) return false
+        if (html.isBlank() || html.encodeToByteArray().size > MAX_BYTES) return false
         val title = path.substringAfterLast('/').ifBlank { path }
         _latest.value = Preview(
             id = Uuid.random().toString(),
