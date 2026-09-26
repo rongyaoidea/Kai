@@ -8,6 +8,13 @@ on:
     branches:
       - main
 
+# A newer commit supersedes whatever an in-flight run was about to report, so
+# PR runs are cancelled rather than queued. main pushes are never cancelled:
+# that build is the one branch protection waits on.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   test:
     name: Run Unit Tests
@@ -22,9 +29,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.head_ref || github.ref }}
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
@@ -40,22 +44,21 @@ jobs:
           distribution: 'temurin'
           java-version: '21'
 
-      - name: Cache Gradle dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-v2-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-v2-
+      # Replaces the hand-rolled actions/cache block, which only covered the
+      # wrapper distribution. setup-gradle also caches the dependency store and
+      # the task-output cache, and reports step timings.
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-      - name: Drop cached Gradle state for hermetic builds
-        # Only ~/.gradle/wrapper is restored above. Everything under
-        # ~/.gradle/caches (dependency jars, task outputs, Kotlin incremental
-        # state) is rebuilt: a poisoned cache entry once shadowed newly added
-        # compose resources for several runs and cost more debugging time than
-        # re-downloads ever will.
-        run: rm -rf ~/.gradle/caches
+      # Only the task-output cache is dropped. A poisoned entry there once
+      # shadowed newly added compose resources and cost more debugging time
+      # than a re-render ever will — but ~/.gradle/caches also holds the
+      # content-addressed dependency store, which was never the culprit. This
+      # step used to `rm -rf ~/.gradle/caches`, paying a full dependency
+      # re-download on every run to guard a problem that only ever lived in
+      # this one subdirectory.
+      - name: Drop cached task outputs for hermetic builds
+        run: rm -rf ~/.gradle/caches/build-cache-1
 
       - name: Set execution flag for gradlew
         run: chmod +x gradlew
@@ -65,20 +68,46 @@ jobs:
           echo "JAVA_HOME: $JAVA_HOME"
           java -version
 
+      # Kept in its own invocation on purpose. spotlessApply rewrites .kt files
+      # in place, and org.gradle.parallel=true would otherwise let it race the
+      # Kotlin compiler reading those same files. Every invocation below reuses
+      # the daemon this one starts, so the split costs seconds rather than a
+      # cold JVM per step.
       - name: Run spotlessApply
-        run: ./gradlew spotlessApply --no-daemon --stacktrace
+        run: ./gradlew spotlessApply --stacktrace
 
-      - name: Run updateScreenshots
-        run: ./gradlew :screenshotTests:updateScreenshots --no-daemon --stacktrace
+      # One invocation for both. These used to be two separate --no-daemon runs,
+      # each paying for a cold JVM, a cold Kotlin daemon and a fresh round of
+      # project configuration.
+      #
+      #   desktopTest — the shared module's unit tests (JVM).
+      #   assembleFossDebug — desktopTest compiles the shared module for the JVM
+      #     only, so nothing here would catch an error in androidMain. This
+      #     compiles androidMain and the app module without signing or
+      #     publishing anything.
+      - name: Run unit tests and build the Android debug variant
+        run: ./gradlew --stacktrace :composeApp:desktopTest :androidApp:assembleFossDebug
 
-      - name: Run desktop tests
-        run: ./gradlew :composeApp:desktopTest --no-daemon --stacktrace
-
-      # desktopTest compiles the shared module for the JVM only, so nothing here would
-      # catch an error in androidMain. Assemble the debug variant to compile both
-      # androidMain and the app module without signing or publishing anything.
-      - name: Build Android debug variant
-        run: ./gradlew :androidApp:assembleFossDebug --no-daemon --stacktrace
+      # Deliberately a separate step. Both targets below were previously
+      # compiled by *no* workflow, so their task names are newer than the rest
+      # of this file and are the most likely thing here to need a one-word fix.
+      # Isolating them keeps such a failure from also masking the test results
+      # above.
+      #
+      # compileKotlinWasmJs — wasmJsMain (23 files) was never compiled anywhere,
+      # so an expect/actual signature change broke the Web build silently.
+      #
+      # :screenshotTests:compileDebugUnitTestKotlin — this replaces the
+      # :screenshotTests:updateScreenshots call that used to sit here. That call
+      # was dead weight: it recorded Paparazzi goldens into
+      # src/test/snapshots/images, which .gitignore excludes and which has never
+      # been tracked (0 files, in this repo and in every commit that ever
+      # touched it). The drift check below could therefore never observe a
+      # screenshot difference — it only ever caught formatting, while paying for
+      # a full render of the suite on every run. Compiling the test sources
+      # keeps the module from rotting at a fraction of the cost.
+      - name: Compile the Wasm and screenshot-test targets
+        run: ./gradlew --stacktrace :composeApp:compileKotlinWasmJs :screenshotTests:compileDebugUnitTestKotlin
 
       - name: Check for changes
         id: changes
@@ -89,26 +118,49 @@ jobs:
             echo "has_changes=false" >> $GITHUB_OUTPUT
           fi
 
-      # No auto-fix push: formatting/screenshot drift fails the run and the
-      # author re-runs the commands locally. Auto-commits cost extra minutes
-      # and bury real changes under bot commits.
-      - name: Fail on formatting or screenshot drift
+      # No auto-fix push: formatting drift fails the run and the author re-runs
+      # the command locally. Auto-commits cost extra minutes and bury real
+      # changes under bot commits.
+      - name: Fail on formatting drift
         if: steps.changes.outputs.has_changes == 'true'
         run: |
-          echo "::error::spotlessApply or updateScreenshots produced changes."
+          echo "::error::spotlessApply produced changes."
           echo "Run locally and push the result:"
           echo "  ./gradlew spotlessApply"
-          echo "  ./gradlew :screenshotTests:updateScreenshots"
           git status --porcelain
           git diff --binary > drift.patch
           exit 1
 
-      # The patch (including binary screenshots) is uploaded so the author can
-      # apply it without a JVM at hand: gh run download <id> -n drift-patch
-      # then `git apply drift.patch`. Read-only: nothing is committed.
+      # Read-only: nothing is committed. Uploaded so the author can apply the
+      # patch without a JVM at hand: gh run download <id> -n drift-patch
+      # then `git apply drift.patch`.
       - name: Upload drift patch
         if: failure() && steps.changes.outputs.has_changes == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: drift-patch
           path: drift.patch
+
+      # Non-blocking on purpose. values/strings.xml is the source of truth and
+      # every locale falls back to it for keys it lacks, so a missing key ships
+      # as English rather than as a build failure. 69 of 579 keys are currently
+      # untranslated in de/ja and most other locales — clustered in the features
+      # added over the last few releases (tool approval, tool call cards, the
+      # automation section, MCP marketplaces, max tool steps).
+      #
+      # This warns rather than fails so the existing backlog does not turn every
+      # run red on day one. Once the backlog is cleared, flip warn -> error.
+      - name: Warn on untranslated string keys
+        run: |
+          res=composeApp/src/commonMain/composeResources
+          grep -o 'name="[^"]*"' "$res/values/strings.xml" | sort -u > /tmp/base.keys
+          missing=0
+          for f in "$res"/values-*/strings.xml; do
+            grep -o 'name="[^"]*"' "$f" | sort -u > /tmp/loc.keys
+            n=$(comm -23 /tmp/base.keys /tmp/loc.keys | wc -l)
+            if [ "$n" -gt 0 ]; then
+              echo "::warning file=$f::$n key(s) fall back to English"
+              missing=$((missing + n))
+            fi
+          done
+          echo "Total untranslated: $missing (baseline 0, currently backlogged)"
